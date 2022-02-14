@@ -37,7 +37,6 @@ module Github_provider = struct
     in
     let%lwt resp =
       Hyper.post
-        ~server:(Hyper.run ~transport:`HTTPS)
         ~headers:
           [
             ("Host", "github.com");
@@ -62,7 +61,6 @@ module Github_provider = struct
     let url = Uri.to_string user_profile_url in
     let%lwt data =
       Hyper.get url
-        ~server:(Hyper.run ~transport:`HTTPS)
         ~headers:
           [
             ("Authorization", "token " ^ access_token);
