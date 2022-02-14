@@ -1,4 +1,6 @@
 init:
+	git submodule init
+	git submodule update
 	opam switch create . -y --no-install 4.12.1
 	opam install ./hyper -y --deps-only
 	opam install . -y --deps-only
