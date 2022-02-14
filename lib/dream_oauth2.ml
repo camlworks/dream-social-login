@@ -1,3 +1,4 @@
+(* TODO: expose it interface *)
 module User_profile = struct
   type t = { user : string; email : string }
 end
@@ -5,6 +6,7 @@ end
 (* XXX: should be added by Hyper? *)
 let user_agent = "hyper/1.0.0"
 
+(* TODO: get rid of [Uri] usage here, [Dream] API should be enough. *)
 module Github_provider = struct
   let authorize_url = Uri.of_string "https://github.com/login/oauth/authorize"
 
@@ -15,6 +17,7 @@ module Github_provider = struct
         ("client_id", [ client_id ]);
         ("redirect_uri", [ redirect_uri ]);
         ("state", [ state ]);
+        (* XXX: empty scope? *)
         ("scope", [ String.concat " " scope ]);
       ]
     in
@@ -81,6 +84,8 @@ module Github_provider = struct
     Lwt.return user_profile
 end
 
+(* TODO: research if using Same-Site: Lax is ok here, alternatively there's
+   client side redirect. *)
 module State_nonce_cookie = struct
   let cookie_name = "oauth2_state_nonce"
 
@@ -93,6 +98,8 @@ module State_nonce_cookie = struct
   let drop res req = Dream.drop_cookie ~http_only:true res req cookie_name
 end
 
+(* TODO: we should use session mechanism here, research why it doesn't work for
+   me. *)
 module Auth_cookie = struct
   let cookie_name = "oauth2_auth"
 
@@ -105,8 +112,10 @@ module Auth_cookie = struct
   let drop res req = Dream.drop_cookie ~http_only:true res req cookie_name
 end
 
+(* TODO: this should return [User_profile.t] instead of just username. *)
 let user_profile = Auth_cookie.get
 
+(* TODO: should we make [redirect_uri] optional? *)
 let route ~client_id ~client_secret ~redirect_uri () =
   Dream.scope "/" []
     [
@@ -123,6 +132,7 @@ let route ~client_id ~client_secret ~redirect_uri () =
           Auth_cookie.drop res req;
           Lwt.return res);
       Dream.get "/oauth2/callback" (fun req ->
+          (* TODO: error handling *)
           let exception Oauth2_callback_failure of string in
           try%lwt
             let%lwt res_ok = Dream.redirect req "/" in
