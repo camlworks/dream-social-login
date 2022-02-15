@@ -6,25 +6,20 @@ end
 (* XXX: should be added by Hyper? *)
 let user_agent = "hyper/1.0.0"
 
-(* TODO: get rid of [Uri] usage here, [Dream] API should be enough. *)
 module Github_provider = struct
-  let authorize_url = Uri.of_string "https://github.com/login/oauth/authorize"
-
   let authorize_url ~client_id ~redirect_uri ~state ?(scope = [ "read:user" ])
       () =
-    let query =
-      [
-        ("client_id", [ client_id ]);
-        ("redirect_uri", [ redirect_uri ]);
-        ("state", [ state ]);
-        (* XXX: empty scope? *)
-        ("scope", [ String.concat " " scope ]);
-      ]
+    let params =
+      Hyper.to_form_urlencoded
+        [
+          ("client_id", client_id);
+          ("redirect_uri", redirect_uri);
+          ("state", state);
+          (* XXX: empty scope? *)
+          ("scope", String.concat " " scope);
+        ]
     in
-    Uri.with_uri authorize_url ~query:(Some query) |> Uri.to_string
-
-  let access_token_url =
-    Uri.of_string "https://github.com:443/login/oauth/access_token"
+    "https://github.com/login/oauth/authorize?" ^ params
 
   let access_token ~client_id ~client_secret ~code () =
     let body =
@@ -46,8 +41,7 @@ module Github_provider = struct
             (* XXX: should be added by hyper? *)
             ("Content-Length", Int.to_string (String.length body));
           ]
-        (Uri.to_string access_token_url)
-        body
+        "https://github.com:443/login/oauth/access_token" body
     in
     let data = Dream_pure.Formats.from_form_urlencoded resp in
     Lwt.return
@@ -55,12 +49,9 @@ module Github_provider = struct
         | "access_token", access_token -> Some access_token
         | _ -> None))
 
-  let user_profile_url = Uri.of_string "https://api.github.com:443/user"
-
   let user_profile ~access_token () =
-    let url = Uri.to_string user_profile_url in
     let%lwt data =
-      Hyper.get url
+      Hyper.get "https://api.github.com:443/user"
         ~headers:
           [
             ("Authorization", "token " ^ access_token);
