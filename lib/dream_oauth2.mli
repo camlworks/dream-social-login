@@ -7,6 +7,8 @@ val route :
   client_id:string ->
   client_secret:string ->
   redirect_uri:string ->
+  ?redirect_on_signin:string ->
+  ?redirect_on_signout:string ->
   unit ->
   Dream.route
 (** Create a set of routes for performing authentication.

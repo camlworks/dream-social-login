@@ -169,7 +169,8 @@ end
 
 let user_profile = User_profile_cookie.get
 
-let route ~client_id ~client_secret ~redirect_uri () =
+let route ~client_id ~client_secret ~redirect_uri ?(redirect_on_signin = "/")
+    ?(redirect_on_signout = "/") () =
   Dream.scope "/" []
     [
       Dream.get "/oauth2/signin" (fun req ->
@@ -181,14 +182,14 @@ let route ~client_id ~client_secret ~redirect_uri () =
           State_nonce_cookie.set res req state;
           Lwt.return res);
       Dream.get "/oauth2/signout" (fun req ->
-          let%lwt res = Dream.redirect req "/" in
+          let%lwt res = Dream.redirect req redirect_on_signout in
           User_profile_cookie.drop res req;
           Lwt.return res);
       Dream.get "/oauth2/callback" (fun req ->
           let exception Callback_error of string in
           let error reason = raise (Callback_error reason) in
           try%lwt
-            let%lwt res_ok = Dream.redirect req "/" in
+            let%lwt res_ok = Dream.redirect req redirect_on_signin in
             let () =
               match Dream.query req "error" with
               | None -> ()
