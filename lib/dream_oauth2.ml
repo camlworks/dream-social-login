@@ -190,27 +190,32 @@ let route ~client_id ~client_secret ~redirect_uri () =
           try%lwt
             let%lwt res_ok = Dream.redirect req "/" in
             let () =
+              match Dream.query req "error" with
+              | None -> ()
+              | Some reason -> error ("provider returned: " ^ reason)
+            in
+            let () =
               let expected =
                 match State_nonce_cookie.get req with
-                | None ->
-                    error
-                      "no callback request expected: `state` parameter missing"
                 | Some v ->
                     State_nonce_cookie.drop res_ok req;
                     v
+                | None ->
+                    error
+                      "no callback request expected: `state` parameter missing"
               in
               let got =
                 match Dream.query req "state" with
-                | None -> error "no `state` parameter in callback request"
                 | Some v -> v
+                | None -> error "no `state` parameter in callback request"
               in
               if not (String.equal expected got) then
                 error "`state` parameter mismatch"
             in
             let code =
               match Dream.query req "code" with
-              | None -> error "no `code` parameter in callback request"
               | Some v -> v
+              | None -> error "no `code` parameter in callback request"
             in
             let%lwt access_token =
               match%lwt
