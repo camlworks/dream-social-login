@@ -1,6 +1,28 @@
-(* TODO: expose it interface *)
+let json_string_field key json =
+  Yojson.Basic.Util.(
+    try Ok (to_string (member key json))
+    with Type_error _ ->
+      Error
+        (Printf.sprintf "error decoding JSON: missing or invalid `%s` field" key))
+
 module User_profile = struct
   type t = { user : string; email : string }
+  (** Information about an authenticated user.
+
+      The fields choosen to be available from most of the OIDC providers. *)
+
+  let to_json_string { user; email } =
+    let json = `Assoc [ ("user", `String user); ("email", `String email) ] in
+    Yojson.Basic.to_string json
+
+  let of_json_string data =
+    Result.bind
+      (try Ok (Yojson.Basic.from_string data)
+       with Yojson.Json_error error -> Error error)
+    @@ fun json ->
+    match (json_string_field "user" json, json_string_field "email" json) with
+    | Ok user, Ok email -> Ok { user; email }
+    | Error err, _ | _, Error err -> Error err
 end
 
 (* XXX: should be added by Hyper? *)
@@ -96,19 +118,15 @@ module Github_provider = struct
               log.debug (fun log -> log "user_profile response body=%s" body);
               raise (User_profile_error "error parsing JSON response")
           in
-          let json_field key json =
-            Yojson.Basic.Util.(
-              try to_string (member key json)
-              with Type_error _ ->
-                let msg =
-                  Printf.sprintf
-                    "error decoding JSON: missing or invalid `%s` field" key
-                in
+          let json_string_field key json =
+            match json_string_field key json with
+            | Ok v -> v
+            | Error err ->
                 log.debug (fun log -> log "user_profile response body=%s" body);
-                raise (User_profile_error msg))
+                raise (User_profile_error err)
           in
-          let user = json_field "login" json in
-          let email = json_field "email" json in
+          let user = json_string_field "login" json in
+          let email = json_string_field "email" json in
           Lwt.return_ok { User_profile.user; email }
       | status ->
           let status = Dream_pure.Status.status_to_string status in
@@ -135,20 +153,25 @@ end
 
 (* TODO: we should use session mechanism here, research why it doesn't work for
    me. *)
-module Auth_cookie = struct
-  let cookie_name = "oauth2_auth"
+module User_profile_cookie = struct
+  let cookie_name = "oauth2_user_profile"
 
-  let set res req state =
+  let set res req user_profile =
     Dream.set_cookie ~http_only:true
       ~same_site:(Some `Lax)
-      ~max_age:(60.0 *. 5.0) ~encrypt:true res req cookie_name state
+      ~max_age:(60.0 *. 5.0) ~encrypt:true res req cookie_name
+      (User_profile.to_json_string user_profile)
 
-  let get req = Dream.cookie ~decrypt:true req cookie_name
+  let get req =
+    Option.bind (Dream.cookie ~decrypt:true req cookie_name) @@ fun value ->
+    match User_profile.of_json_string value with
+    | Ok user_profile -> Some user_profile
+    | Error _ -> None
+
   let drop res req = Dream.drop_cookie ~http_only:true res req cookie_name
 end
 
-(* TODO: this should return [User_profile.t] instead of just username. *)
-let user_profile = Auth_cookie.get
+let user_profile = User_profile_cookie.get
 
 (* TODO: should we make [redirect_uri] optional? *)
 let route ~client_id ~client_secret ~redirect_uri () =
@@ -164,7 +187,7 @@ let route ~client_id ~client_secret ~redirect_uri () =
           Lwt.return res);
       Dream.get "/oauth2/signout" (fun req ->
           let%lwt res = Dream.redirect req "/" in
-          Auth_cookie.drop res req;
+          User_profile_cookie.drop res req;
           Lwt.return res);
       Dream.get "/oauth2/callback" (fun req ->
           let exception Callback_error of string in
@@ -206,7 +229,7 @@ let route ~client_id ~client_secret ~redirect_uri () =
               | Ok user_profile -> Lwt.return user_profile
               | Error reason -> error ("error getting user_profle: " ^ reason)
             in
-            Auth_cookie.set res_ok req user_profile.User_profile.user;
+            User_profile_cookie.set res_ok req user_profile;
             Lwt.return res_ok
           with Callback_error reason ->
             log.error (fun log -> log "Callback error: %s" reason);

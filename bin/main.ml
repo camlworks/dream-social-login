@@ -48,7 +48,7 @@ let () =
                         <input type="submit" />
                       </form>
                     |}
-                     user (Dream.csrf_tag req)
+                     user.Dream_oauth2.User_profile.user (Dream.csrf_tag req)
                  in
                  Dream.respond (header ^ Messages.render ()));
          Dream.post "/" (fun req ->
@@ -57,7 +57,8 @@ let () =
              | Some user -> (
                  match%lwt Dream.form req with
                  | `Ok [ ("message", message) ] ->
-                     Messages.add ~user message;
+                     Messages.add ~user:user.Dream_oauth2.User_profile.user
+                       message;
                      Dream.redirect req "/"
                  | _ -> Dream.redirect req "/"));
        ]
