@@ -20,6 +20,11 @@ module Messages = struct
 end
 
 let () =
+  let () =
+    match Sys.getenv_opt "DEBUG" with
+    | None | Some ("no" | "NO" | "0") -> ()
+    | Some _ -> Dream.initialize_log ~level:`Debug ()
+  in
   Dream.run ~adjust_terminal:false ?interface:(Sys.getenv_opt "INTERFACE")
   @@ Dream.logger @@ Dream.memory_sessions
   @@ Dream.router
