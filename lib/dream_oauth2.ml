@@ -137,8 +137,6 @@ module Github_provider = struct
     with User_profile_error reason -> Lwt.return_error reason
 end
 
-(* TODO: research if using Same-Site: Lax is ok here, alternatively there's
-   client side redirect. *)
 module State_nonce_cookie = struct
   let cookie_name = "oauth2_state_nonce"
 
@@ -151,8 +149,6 @@ module State_nonce_cookie = struct
   let drop res req = Dream.drop_cookie ~http_only:true res req cookie_name
 end
 
-(* TODO: we should use session mechanism here, research why it doesn't work for
-   me. *)
 module User_profile_cookie = struct
   let cookie_name = "oauth2_user_profile"
 
