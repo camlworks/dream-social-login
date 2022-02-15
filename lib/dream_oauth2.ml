@@ -2,7 +2,8 @@ module User_profile = struct
   type t = { user : string; email : string }
   (** Information about an authenticated user.
 
-      The fields choosen to be available from most of the OIDC providers. *)
+      The fields choosen to be commonly available from most identity providers.
+    *)
 end
 
 (* XXX: should be added by Hyper? *)

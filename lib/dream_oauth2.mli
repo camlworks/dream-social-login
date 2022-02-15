@@ -11,21 +11,21 @@ val route :
   ?redirect_on_signout:string ->
   unit ->
   Dream.route
-(** Create a set of routes for performing authentication with an OIDC provider.
+(** Create a set of routes for performing authentication with an identity provider.
 
     The following endpoints are provided:
 
     - {b /oauth2/signin} initiates the authentication flow. The user is
-      redirected to the OIDC provider.
+      redirected to the identity provider.
 
-    - {b /oauth2/callback} receives the callback request from OIDC provider,
-      validates it, persists authenticated [User_profile.t] information and
-      finally redirects to [redirect_on_signin] location (by default it is /).
+    - {b /oauth2/callback} receives the callback request from an identity
+      provider, validates it, persists authenticated [User_profile.t] information
+      and finally redirects to [redirect_on_signin] location (by default it is /).
 
     - {b /oauth2/signout} drops authentication information and redirects
       to [redirect_on_signout] location (by default it is /).
 
-    Currently this performs authentication against GitHub OIDC endpoint.
+    Currently this performs authentication against GitHub identity provider.
 
     Parameters [client_id], [client_secret] and [redirect_uri] should be
     configured according to GitHub OAuth app created.
