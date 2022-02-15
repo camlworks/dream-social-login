@@ -169,7 +169,6 @@ end
 
 let user_profile = User_profile_cookie.get
 
-(* TODO: should we make [redirect_uri] optional? *)
 let route ~client_id ~client_secret ~redirect_uri () =
   Dream.scope "/" []
     [
