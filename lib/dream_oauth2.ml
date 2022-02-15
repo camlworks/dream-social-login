@@ -1,28 +1,8 @@
-let json_string_field key json =
-  Yojson.Basic.Util.(
-    try Ok (to_string (member key json))
-    with Type_error _ ->
-      Error
-        (Printf.sprintf "error decoding JSON: missing or invalid `%s` field" key))
-
 module User_profile = struct
   type t = { user : string; email : string }
   (** Information about an authenticated user.
 
       The fields choosen to be available from most of the OIDC providers. *)
-
-  let to_json_string { user; email } =
-    let json = `Assoc [ ("user", `String user); ("email", `String email) ] in
-    Yojson.Basic.to_string json
-
-  let of_json_string data =
-    Result.bind
-      (try Ok (Yojson.Basic.from_string data)
-       with Yojson.Json_error error -> Error error)
-    @@ fun json ->
-    match (json_string_field "user" json, json_string_field "email" json) with
-    | Ok user, Ok email -> Ok { user; email }
-    | Error err, _ | _, Error err -> Error err
 end
 
 (* XXX: should be added by Hyper? *)
@@ -119,11 +99,14 @@ module Github_provider = struct
               raise (User_profile_error "error parsing JSON response")
           in
           let json_string_field key json =
-            match json_string_field key json with
-            | Ok v -> v
-            | Error err ->
+            Yojson.Basic.Util.(
+              try to_string (member key json)
+              with Type_error _ ->
                 log.debug (fun log -> log "user_profile response body=%s" body);
-                raise (User_profile_error err)
+                raise
+                  (User_profile_error
+                     (Printf.sprintf
+                        "error decoding JSON: missing or invalid `%s` field" key)))
           in
           let user = json_string_field "login" json in
           let email = json_string_field "email" json in
@@ -137,37 +120,95 @@ module Github_provider = struct
     with User_profile_error reason -> Lwt.return_error reason
 end
 
-module State_nonce_cookie = struct
-  let cookie_name = "oauth2_state_nonce"
+module type COOKIE_SPEC = sig
+  val cookie_name : string
+  val max_age : float
 
-  let set res req state =
-    Dream.set_cookie ~http_only:true
-      ~same_site:(Some `Lax)
-      ~max_age:(60.0 *. 5.0) ~encrypt:true res req cookie_name state
+  type value
 
-  let get req = Dream.cookie ~decrypt:true req cookie_name
-  let drop res req = Dream.drop_cookie ~http_only:true res req cookie_name
+  val value_to_yojson : value -> Yojson.Basic.t
+  val value_of_yojson : Yojson.Basic.t -> (value, string) result
 end
 
-module User_profile_cookie = struct
-  let cookie_name = "oauth2_user_profile"
+module Cookie_with_expiration (Spec : COOKIE_SPEC) : sig
+  type value
 
-  let set res req user_profile =
+  val set : Dream.response -> Dream.request -> value -> unit
+  val get : Dream.request -> value option
+  val drop : Dream.response -> Dream.request -> unit
+end
+with type value := Spec.value = struct
+  type 'a packed = { expires : float; value : 'a }
+
+  let packed_to_yojson { expires; value } =
+    `Assoc
+      [ ("expires", `Float expires); ("value", Spec.value_to_yojson value) ]
+
+  let packed_of_yojson (json : Yojson.Basic.t) =
+    let ( >>= ) = Result.bind in
+    match json with
+    | `Assoc [ ("expires", expires); ("value", value) ] ->
+        (match expires with
+        | `Int v -> Ok (Int.to_float v)
+        | `Float v -> Ok v
+        | _ -> Error "invalid Packed.t")
+        >>= fun expires ->
+        Spec.value_of_yojson value >>= fun value -> Ok { expires; value }
+    | _ -> Error "invalid Packed.t"
+
+  let set res req value =
+    let now = Unix.gettimeofday () in
+    let expires = now +. Spec.max_age in
     Dream.set_cookie ~http_only:true
       ~same_site:(Some `Lax)
-      ~max_age:(60.0 *. 5.0) ~encrypt:true res req cookie_name
-      (User_profile.to_json_string user_profile)
+      ~expires ~encrypt:true res req Spec.cookie_name
+      (Yojson.Basic.to_string (packed_to_yojson { expires; value }))
 
   let get req =
-    Option.bind (Dream.cookie ~decrypt:true req cookie_name) @@ fun value ->
-    match User_profile.of_json_string value with
-    | Ok user_profile -> Some user_profile
-    | Error _ -> None
+    let now = Unix.gettimeofday () in
+    Option.bind (Dream.cookie ~decrypt:true req Spec.cookie_name)
+    @@ fun value ->
+    match Yojson.Basic.from_string value with
+    | json -> (
+        match packed_of_yojson json with
+        | Ok { expires; value } -> if expires > now then Some value else None
+        | Error _ -> None)
+    | exception Yojson.Json_error _ -> None
 
-  let drop res req = Dream.drop_cookie ~http_only:true res req cookie_name
+  let drop res req = Dream.drop_cookie ~http_only:true res req Spec.cookie_name
 end
 
-let user_profile = User_profile_cookie.get
+module State_nonce_cookie = Cookie_with_expiration (struct
+  let cookie_name = "dream_oauth2.state"
+  let max_age = 50.0 *. 5.0 (* 5 minutes *)
+
+  type value = string
+
+  let value_to_yojson v = `String v
+
+  let value_of_yojson = function
+    | `String v -> Ok v
+    | _ -> Error "invalid state value"
+end)
+
+module Auth_cookie = Cookie_with_expiration (struct
+  let max_age = 60.0 *. 60.0 *. 24.0 *. 7.0 (* a week *)
+
+  let cookie_name = "dream_oauth2.auth"
+
+  type value = User_profile.t
+
+  let value_to_yojson { User_profile.user; email } =
+    `Assoc [ ("user", `String user); ("email", `String email) ]
+
+  let value_of_yojson json =
+    match json with
+    | `Assoc [ ("user", `String user); ("email", `String email) ] ->
+        Ok { User_profile.user; email }
+    | _ -> Error "invalid User_profile.t"
+end)
+
+let user_profile = Auth_cookie.get
 
 let route ~client_id ~client_secret ~redirect_uri ?(redirect_on_signin = "/")
     ?(redirect_on_signout = "/") () =
@@ -183,7 +224,7 @@ let route ~client_id ~client_secret ~redirect_uri ?(redirect_on_signin = "/")
           Lwt.return res);
       Dream.get "/oauth2/signout" (fun req ->
           let%lwt res = Dream.redirect req redirect_on_signout in
-          User_profile_cookie.drop res req;
+          Auth_cookie.drop res req;
           Lwt.return res);
       Dream.get "/oauth2/callback" (fun req ->
           let exception Callback_error of string in
@@ -230,7 +271,7 @@ let route ~client_id ~client_secret ~redirect_uri ?(redirect_on_signin = "/")
               | Ok user_profile -> Lwt.return user_profile
               | Error reason -> error ("error getting user_profle: " ^ reason)
             in
-            User_profile_cookie.set res_ok req user_profile;
+            Auth_cookie.set res_ok req user_profile;
             Lwt.return res_ok
           with Callback_error reason ->
             log.error (fun log -> log "Callback error: %s" reason);
