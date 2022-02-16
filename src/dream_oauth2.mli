@@ -1,5 +1,8 @@
 module User_profile : sig
-  type t = { user : string; email : string }
+  type t = {
+    user : string;
+    email : string;
+  }
   (** Information about an authenticated user. *)
 end
 

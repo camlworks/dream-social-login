@@ -1,5 +1,8 @@
 module User_profile = struct
-  type t = { user : string; email : string }
+  type t = {
+    user : string;
+    email : string;
+  }
   (** Information about an authenticated user.
 
       The fields choosen to be commonly available from most identity providers.
@@ -13,8 +16,8 @@ let log = Dream.sub_log "dream-oauth2"
 module Github_provider = struct
   (** [authorize_url] is used to produce a URL to redirect browser to for
       authentication flow. *)
-  let authorize_url ~client_id ~redirect_uri ~state ?(scope = [ "read:user" ])
-      () =
+  let authorize_url ~client_id ~redirect_uri ~state ?(scope = ["read:user"]) ()
+      =
     let params =
       Hyper.to_form_urlencoded
         [
@@ -56,23 +59,23 @@ module Github_provider = struct
     let%lwt body = Dream_pure.Message.body resp in
     match Dream_pure.Message.status resp with
     | #Dream_pure.Status.successful ->
-        let data = Dream_pure.Formats.from_form_urlencoded body in
-        let access_token =
-          ListLabels.find_map data ~f:(function
-            | "access_token", access_token -> Some access_token
-            | _ -> None)
-        in
-        Lwt.return
-          (match access_token with
-          | Some token -> Ok token
-          | None ->
-              log.debug (fun log -> log "access_token response body=%s" body);
-              Error "no `access_token` in the response")
+      let data = Dream_pure.Formats.from_form_urlencoded body in
+      let access_token =
+        ListLabels.find_map data ~f:(function
+          | "access_token", access_token -> Some access_token
+          | _ -> None)
+      in
+      Lwt.return
+        (match access_token with
+        | Some token -> Ok token
+        | None ->
+          log.debug (fun log -> log "access_token response body=%s" body);
+          Error "no `access_token` in the response")
     | status ->
-        let status = Dream_pure.Status.status_to_string status in
-        log.debug (fun log ->
-            log "access_token response status=%s body=%s" status body);
-        Lwt.return_error ("response status code: " ^ status)
+      let status = Dream_pure.Status.status_to_string status in
+      log.debug (fun log ->
+          log "access_token response status=%s body=%s" status body);
+      Lwt.return_error ("response status code: " ^ status)
 
   (** [user_profile] performs a request to get user profile info. *)
   let user_profile ~access_token () =
@@ -93,31 +96,31 @@ module Github_provider = struct
       let%lwt body = Dream_pure.Message.body resp in
       match Dream_pure.Message.status resp with
       | #Dream_pure.Status.successful ->
-          let json =
-            try Yojson.Basic.from_string body
-            with Yojson.Json_error _ ->
+        let json =
+          try Yojson.Basic.from_string body
+          with Yojson.Json_error _ ->
+            log.debug (fun log -> log "user_profile response body=%s" body);
+            raise (User_profile_error "error parsing JSON response")
+        in
+        let json_string_field key json =
+          Yojson.Basic.Util.(
+            try to_string (member key json)
+            with Type_error _ ->
               log.debug (fun log -> log "user_profile response body=%s" body);
-              raise (User_profile_error "error parsing JSON response")
-          in
-          let json_string_field key json =
-            Yojson.Basic.Util.(
-              try to_string (member key json)
-              with Type_error _ ->
-                log.debug (fun log -> log "user_profile response body=%s" body);
-                raise
-                  (User_profile_error
-                     (Printf.sprintf
-                        "error decoding JSON: missing or invalid `%s` field" key)))
-          in
-          let user = json_string_field "login" json in
-          let email = json_string_field "email" json in
-          Lwt.return_ok { User_profile.user; email }
+              raise
+                (User_profile_error
+                   (Printf.sprintf
+                      "error decoding JSON: missing or invalid `%s` field" key)))
+        in
+        let user = json_string_field "login" json in
+        let email = json_string_field "email" json in
+        Lwt.return_ok { User_profile.user; email }
       | status ->
-          let status = Dream_pure.Status.status_to_string status in
-          log.debug (fun log ->
-              log "user_profile response status=%s body=%s" status body);
-          let reason = "response status code: " ^ status in
-          raise (User_profile_error reason)
+        let status = Dream_pure.Status.status_to_string status in
+        log.debug (fun log ->
+            log "user_profile response status=%s body=%s" status body);
+        let reason = "response status code: " ^ status in
+        raise (User_profile_error reason)
     with User_profile_error reason -> Lwt.return_error reason
 end
 
@@ -139,22 +142,24 @@ module Cookie_with_expiration (Spec : COOKIE_SPEC) : sig
   val drop : Dream.response -> Dream.request -> unit
 end
 with type value := Spec.value = struct
-  type 'a packed = { expires : float; value : 'a }
+  type 'a packed = {
+    expires : float;
+    value : 'a;
+  }
 
   let packed_to_yojson { expires; value } =
-    `Assoc
-      [ ("expires", `Float expires); ("value", Spec.value_to_yojson value) ]
+    `Assoc [("expires", `Float expires); ("value", Spec.value_to_yojson value)]
 
   let packed_of_yojson (json : Yojson.Basic.t) =
     let ( >>= ) = Result.bind in
     match json with
-    | `Assoc [ ("expires", expires); ("value", value) ] ->
-        (match expires with
-        | `Int v -> Ok (Int.to_float v)
-        | `Float v -> Ok v
-        | _ -> Error "invalid Packed.t")
-        >>= fun expires ->
-        Spec.value_of_yojson value >>= fun value -> Ok { expires; value }
+    | `Assoc [("expires", expires); ("value", value)] ->
+      (match expires with
+      | `Int v -> Ok (Int.to_float v)
+      | `Float v -> Ok v
+      | _ -> Error "invalid Packed.t")
+      >>= fun expires ->
+      Spec.value_of_yojson value >>= fun value -> Ok { expires; value }
     | _ -> Error "invalid Packed.t"
 
   let set res req value =
@@ -171,9 +176,9 @@ with type value := Spec.value = struct
     @@ fun value ->
     match Yojson.Basic.from_string value with
     | json -> (
-        match packed_of_yojson json with
-        | Ok { expires; value } -> if expires > now then Some value else None
-        | Error _ -> None)
+      match packed_of_yojson json with
+      | Ok { expires; value } -> if expires > now then Some value else None
+      | Error _ -> None)
     | exception Yojson.Json_error _ -> None
 
   let drop res req = Dream.drop_cookie ~http_only:true res req Spec.cookie_name
@@ -200,12 +205,12 @@ module Auth_cookie = Cookie_with_expiration (struct
   type value = User_profile.t
 
   let value_to_yojson { User_profile.user; email } =
-    `Assoc [ ("user", `String user); ("email", `String email) ]
+    `Assoc [("user", `String user); ("email", `String email)]
 
   let value_of_yojson json =
     match json with
-    | `Assoc [ ("user", `String user); ("email", `String email) ] ->
-        Ok { User_profile.user; email }
+    | `Assoc [("user", `String user); ("email", `String email)] ->
+      Ok { User_profile.user; email }
     | _ -> Error "invalid User_profile.t"
 end)
 
@@ -241,11 +246,11 @@ let route ~client_id ~client_secret ~redirect_uri ?(redirect_on_signin = "/")
               let expected =
                 match State_nonce_cookie.get req with
                 | Some v ->
-                    State_nonce_cookie.drop res_ok req;
-                    v
+                  State_nonce_cookie.drop res_ok req;
+                  v
                 | None ->
-                    error
-                      "no callback request expected: `state` parameter missing"
+                  error
+                    "no callback request expected: `state` parameter missing"
               in
               let got =
                 match Dream.query req "state" with
