@@ -4,3 +4,8 @@
  (preprocess
   (pps lwt_ppx))
  (libraries dream hyper uri dream_oauth2))
+
+(rule
+ (targets main.ml)
+ (deps main.eml.ml)
+ (action (run dream_eml %{deps} --workspace %{workspace_root})))
