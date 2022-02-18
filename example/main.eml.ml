@@ -4,21 +4,38 @@ let redirect_uri = Sys.getenv "OAUTH2_REDIRECT_URI"
 
 type message = {
   user : string;
-  message : string;
+  text : string;
 }
 
-let messages = ref [{ user = "Unknown"; message = "HELLO" }]
+let messages = ref [{ user = "Unknown"; text = "HELLO" }]
 
-let render_messages () =
-  let items =
-    !messages
-    |> ListLabels.map ~f:(fun msg ->
-           Printf.sprintf "<li>%s: %s</li>" msg.user msg.message)
-    |> String.concat "\n"
-  in
-  Printf.sprintf "<ul>%s</ul>" items
+let add_message ~user text = messages := { user; text } :: !messages
 
-let add_message ~user message = messages := { user; message } :: !messages
+let render request =
+  <html>
+  <body>
+
+% begin match Dream_oauth2.user_profile request with
+% | None ->
+    <p>Please <a href='/oauth2/signin'>sign in</a>!
+% | Some profile ->
+    <p>Hello, <%s profile.Dream_oauth2.User_profile.user %>!<p>
+    <p><a href='/oauth2/signout'>Sign out</a></p>
+    <form method="POST" action="/">
+      <%s! Dream.csrf_tag request %>
+      <textarea name="message"></textarea>
+      <input type="submit" />
+    </form>
+% end;
+
+  <ul>
+%    !messages |> List.iter begin fun message ->
+      <li><%s message.user %>: <%s message.text %></li>
+%   end;
+  </ul>
+
+  </body>
+  </html>
 
 let () =
   Dream.run
@@ -28,26 +45,7 @@ let () =
        [
          Dream_oauth2.route ~client_id ~client_secret ~redirect_uri ();
          Dream.get "/" (fun request ->
-             match Dream_oauth2.user_profile request with
-             | None ->
-               Dream.respond
-                 ("<p>Please <a href='/oauth2/signin'>sign in</a>!"
-                 ^ render_messages ())
-             | Some user ->
-               let header =
-                 Printf.sprintf
-                   {|
-                      <p>Hello, %s!<p>
-                      <p><a href='/oauth2/signout'>Sign out</a></p>
-                      <form method="POST" action="/">
-                        %s
-                        <textarea name="message"></textarea>
-                        <input type="submit" />
-                      </form>
-                    |}
-                   user.Dream_oauth2.User_profile.user (Dream.csrf_tag request)
-               in
-               Dream.respond (header ^ render_messages ()));
+          Dream.html (render request));
          Dream.post "/" (fun request ->
              match Dream_oauth2.user_profile request with
              | None -> Dream.redirect request "/"
