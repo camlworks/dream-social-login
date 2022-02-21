@@ -9,11 +9,11 @@ maintainer: "Andrey Popp <me@andreypopp.com>"
 authors: ["Andrey Popp <me@andreypopp.com>"]
 bug-reports: "https://github.com/andreypopp/dream-oauth2/issues"
 depends: [
-  "dune" {>= "2.9" & >= "2.9"}
+  "dream" {>= "1.0.0~alpha4"}
+  "dune" {>= "2.9.0"}
   "hyper"
-  "dream"
-  "yojson"
   "lwt_ppx"
+  "yojson"
   "odoc" {with-doc}
 ]
 build: [
