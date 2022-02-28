@@ -27,8 +27,11 @@ let render request =
 
 % begin match Dream_oauth2.user_profile request with
 % | None ->
+%   let authorize_url =
+%     Dream_oauth2.signin_url ~client_id ~redirect_uri request
+%   in
     <p>Please sign in to chat!</p>
-    <p><a href="/oauth2/signin">Sign in with GitHub</a></p>
+    <p><a href="<%s authorize_url %>">Sign in with GitHub</a></p>
     <hr>
 % | Some profile ->
     <p>Signed in as <%s profile.Dream_oauth2.User_profile.user %>.<p>
@@ -54,7 +57,7 @@ let () =
   @@ Dream.memory_sessions
   @@ Dream.router [
 
-    Dream_oauth2.route ~client_id ~client_secret ~redirect_uri ();
+    Dream_oauth2.route ~client_id ~client_secret ();
 
     Dream.get "/" (fun request ->
       Dream.html (render request));
