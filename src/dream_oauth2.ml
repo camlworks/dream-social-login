@@ -202,20 +202,39 @@ module Auth_cookie = Cookie_with_expiration (struct
 end)
 
 let user_profile = Auth_cookie.get
+let signout = Auth_cookie.drop
 
 let signin_url ?(valid_for = 60. *. 60. *. 1. (* 1 hour *)) ~client_id
     ~redirect_uri req =
   let state = Dream.csrf_token ~valid_for req in
   Github_provider.authorize_url ~client_id ~redirect_uri ~state ()
 
+let signout_form ?(signout_url = "/oauth2/signout") req =
+  Printf.sprintf
+    {|<form method="POST" action="%s">
+        %s
+        <input type="submit" value="Sign out" />
+      </form>|}
+    signout_url (Dream.csrf_tag req)
+
 let route ~client_id ~client_secret ?(redirect_on_signin = "/")
-    ?(redirect_on_signout = "/") ?(redirect_on_expired_error = "/") () =
+    ?(redirect_on_signout = "/") ?(redirect_on_signin_expired = "/")
+    ?(redirect_on_signout_expired = "/") () =
   Dream.scope "/" []
     [
-      Dream.get "/oauth2/signout" (fun req ->
-          let%lwt res = Dream.redirect req redirect_on_signout in
-          Auth_cookie.drop res req;
-          Lwt.return res);
+      Dream.post "/oauth2/signout" (fun req ->
+          match%lwt Dream.form req with
+          | `Ok _ ->
+            let%lwt res = Dream.redirect req redirect_on_signout in
+            Auth_cookie.drop res req;
+            Lwt.return res
+          | `Expired _ | `Wrong_session _ ->
+            Dream.redirect req redirect_on_signout_expired
+          | `Invalid_token _
+          | `Missing_token _
+          | `Many_tokens _
+          | `Wrong_content_type ->
+            Dream.respond ~status:`Unauthorized "Failed to sign-out");
       Dream.get "/oauth2/callback" (fun req ->
           let exception Callback_error of string * string option in
           let error ?redirect reason =
@@ -237,7 +256,7 @@ let route ~client_id ~client_secret ?(redirect_on_signin = "/")
               match%lwt Dream.verify_csrf_token req state with
               | `Ok -> Lwt.return ()
               | `Expired _ | `Wrong_session ->
-                error ~redirect:redirect_on_expired_error
+                error ~redirect:redirect_on_signin_expired
                   "expired `state` parameter"
               | `Invalid -> error "invalid `state` parameter"
             in

@@ -18,12 +18,23 @@ val signin_url :
     default value is [3600.] which is one hour.
   *)
 
+val signout_form : ?signout_url:string -> Dream.request -> string
+(** Generate an HTML form which performs a logout.
+
+    The form submits a POST request to a CSRF protected [signout_url] (default
+    is "/oauth2/signout").
+
+    Application will usually want to implement its own sign out form with custom
+    design.
+  *)
+
 val route :
   client_id:string ->
   client_secret:string ->
   ?redirect_on_signin:string ->
   ?redirect_on_signout:string ->
-  ?redirect_on_expired_error:string ->
+  ?redirect_on_signin_expired:string ->
+  ?redirect_on_signout_expired:string ->
   unit ->
   Dream.route
 (** Create a set of routes for performing authentication with an identity provider.
@@ -53,3 +64,13 @@ val route :
 val user_profile : Dream.request -> User_profile.t option
 (** [user_profile req] returns [User_profile.t option] information associated
     with the [req] request, if it has any. *)
+
+val signout : Dream.response -> Dream.request -> unit
+(** [signout res req] makes a browser receiving the [res] clear the
+    authenticated [User_profile.t] info.
+
+    This is a low-level API which can be used to perform a custom sign-out flow.
+    Users of this API are responsible for implementing (or not implementing) CSRF
+    protection themselves.
+
+  *)

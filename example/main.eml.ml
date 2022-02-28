@@ -35,7 +35,8 @@ let render request =
     <hr>
 % | Some profile ->
     <p>Signed in as <%s profile.Dream_oauth2.User_profile.user %>.<p>
-    <p><a href="/oauth2/signout">Sign out</a></p>
+%   let signout_form = Dream_oauth2.signout_form request in
+    <p><%s! signout_form %></p>
     <hr>
     <form method="POST" action="/">
       <%s! Dream.csrf_tag request %>
