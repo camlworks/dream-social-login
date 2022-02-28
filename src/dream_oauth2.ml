@@ -203,26 +203,24 @@ end)
 
 let user_profile = Auth_cookie.get
 
-let route ~client_id ~client_secret ~redirect_uri ?(redirect_on_signin = "/")
-    ?(redirect_on_signout = "/") () =
+let signin_url ?(valid_for = 60. *. 60. *. 1. (* 1 hour *)) ~client_id
+    ~redirect_uri req =
+  let state = Dream.csrf_token ~valid_for req in
+  Github_provider.authorize_url ~client_id ~redirect_uri ~state ()
+
+let route ~client_id ~client_secret ?(redirect_on_signin = "/")
+    ?(redirect_on_signout = "/") ?(redirect_on_expired_error = "/") () =
   Dream.scope "/" []
     [
-      Dream.get "/oauth2/signin" (fun req ->
-          let url =
-            let state =
-              let valid_for = 60. *. 60. *. 1. (* 1 hour *) in
-              Dream.csrf_token ~valid_for req
-            in
-            Github_provider.authorize_url ~client_id ~redirect_uri ~state ()
-          in
-          Dream.redirect req url);
       Dream.get "/oauth2/signout" (fun req ->
           let%lwt res = Dream.redirect req redirect_on_signout in
           Auth_cookie.drop res req;
           Lwt.return res);
       Dream.get "/oauth2/callback" (fun req ->
-          let exception Callback_error of string in
-          let error reason = raise (Callback_error reason) in
+          let exception Callback_error of string * string option in
+          let error ?redirect reason =
+            raise (Callback_error (reason, redirect))
+          in
           try%lwt
             let%lwt res_ok = Dream.redirect req redirect_on_signin in
             let () =
@@ -238,8 +236,10 @@ let route ~client_id ~client_secret ~redirect_uri ?(redirect_on_signin = "/")
               in
               match%lwt Dream.verify_csrf_token req state with
               | `Ok -> Lwt.return ()
-              | `Expired _ | `Wrong_session | `Invalid ->
-                error "invalid `state` parameter"
+              | `Expired _ | `Wrong_session ->
+                error ~redirect:redirect_on_expired_error
+                  "expired `state` parameter"
+              | `Invalid -> error "invalid `state` parameter"
             in
             let code =
               match Dream.query req "code" with
@@ -260,7 +260,11 @@ let route ~client_id ~client_secret ~redirect_uri ?(redirect_on_signin = "/")
             in
             Auth_cookie.set res_ok req user_profile;
             Lwt.return res_ok
-          with Callback_error reason ->
+          with Callback_error (reason, redirect) -> (
             log.error (fun log -> log "Callback error: %s" reason);
-            Dream.respond ~status:`Unauthorized "Failed to sign-in with GitHub");
+            match redirect with
+            | Some redirect -> Dream.redirect req redirect
+            | None ->
+              Dream.respond ~status:`Unauthorized
+                "Failed to sign-in with GitHub"));
     ]
