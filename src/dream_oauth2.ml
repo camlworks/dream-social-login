@@ -184,19 +184,6 @@ with type value := Spec.value = struct
   let drop res req = Dream.drop_cookie ~http_only:true res req Spec.cookie_name
 end
 
-module State_nonce_cookie = Cookie_with_expiration (struct
-  let cookie_name = "dream_oauth2.state"
-  let max_age = 50.0 *. 5.0 (* 5 minutes *)
-
-  type value = string
-
-  let value_to_yojson v = `String v
-
-  let value_of_yojson = function
-    | `String v -> Ok v
-    | _ -> Error "invalid state value"
-end)
-
 module Auth_cookie = Cookie_with_expiration (struct
   let max_age = 60.0 *. 60.0 *. 24.0 *. 7.0 (* a week *)
 
@@ -221,13 +208,14 @@ let route ~client_id ~client_secret ~redirect_uri ?(redirect_on_signin = "/")
   Dream.scope "/" []
     [
       Dream.get "/oauth2/signin" (fun req ->
-          let state = Dream.random 32 |> Dream.to_base64url in
           let url =
+            let state =
+              let valid_for = 60. *. 60. *. 1. (* 1 hour *) in
+              Dream.csrf_token ~valid_for req
+            in
             Github_provider.authorize_url ~client_id ~redirect_uri ~state ()
           in
-          let%lwt res = Dream.redirect req url in
-          State_nonce_cookie.set res req state;
-          Lwt.return res);
+          Dream.redirect req url);
       Dream.get "/oauth2/signout" (fun req ->
           let%lwt res = Dream.redirect req redirect_on_signout in
           Auth_cookie.drop res req;
@@ -242,23 +230,16 @@ let route ~client_id ~client_secret ~redirect_uri ?(redirect_on_signin = "/")
               | None -> ()
               | Some reason -> error ("provider returned: " ^ reason)
             in
-            let () =
-              let expected =
-                match State_nonce_cookie.get req with
-                | Some v ->
-                  State_nonce_cookie.drop res_ok req;
-                  v
-                | None ->
-                  error
-                    "no callback request expected: `state` parameter missing"
-              in
-              let got =
+            let%lwt () =
+              let state =
                 match Dream.query req "state" with
                 | Some v -> v
                 | None -> error "no `state` parameter in callback request"
               in
-              if not (String.equal expected got) then
-                error "`state` parameter mismatch"
+              match%lwt Dream.verify_csrf_token req state with
+              | `Ok -> Lwt.return ()
+              | `Expired _ | `Wrong_session | `Invalid ->
+                error "invalid `state` parameter"
             in
             let code =
               match Dream.query req "code" with
