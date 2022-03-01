@@ -33,6 +33,56 @@ type oauth2 = (module OAUTH2)
 let user_agent = "hyper/1.0.0"
 let log = Dream.sub_log "dream-oauth2"
 
+module Helper = struct
+  let url ?(params = []) base =
+    match params with
+    | [] -> base
+    | params -> Printf.sprintf "%s?%s" base (Hyper.to_form_urlencoded params)
+
+  let handle_resp resp =
+    match Dream_pure.Message.status resp with
+    | #Dream_pure.Status.successful -> (
+      match%lwt Dream_encoding.with_decoded_body resp with
+      | Ok resp -> Lwt.return_ok resp
+      | Error err ->
+        log.debug (fun log -> log "error decoding response body: %s" err);
+        Lwt.return_error "error decoding response body")
+    | status ->
+      let status = Dream_pure.Status.status_to_string status in
+      let%lwt body =
+        match%lwt Dream_encoding.with_decoded_body resp with
+        | Ok resp -> Dream_pure.Message.body resp
+        | Error _ -> Lwt.return "<error>"
+      in
+      log.debug (fun log ->
+          log "POST request failed status=%s body=%s" status body);
+      Lwt.return_error ("response status code: " ^ status)
+
+  let post ?params ?(headers = []) ?body url_base =
+    let body, headers =
+      match body with
+      | None -> (None, headers)
+      | Some (`Form params) ->
+        let body = Dream_pure.Formats.to_form_urlencoded params in
+        ( Some (Dream_pure.Stream.string body),
+          ("Content-Type", "application/x-www-form-urlencoded")
+          :: ("Content-Length", Int.to_string (String.length body))
+          :: headers )
+    in
+    Lwt.bind
+      (Hyper.run
+      @@ Hyper.request (url ?params url_base) ~method_:`POST ?body
+           ~headers:(("User-Agent", user_agent) :: headers))
+      handle_resp
+
+  let get ?params ?(headers = []) url_base =
+    Lwt.bind
+      (Hyper.run
+      @@ Hyper.request (url ?params url_base) ~method_:`GET
+           ~headers:(("User-Agent", user_agent) :: headers))
+      handle_resp
+end
+
 module Github = struct
   type config = {
     client_id : string;
@@ -46,8 +96,8 @@ module Github = struct
   (** [authorize_url] is used to produce a URL to redirect browser to for
       authentication flow. *)
   let authorize_url ~state config =
-    let params =
-      Hyper.to_form_urlencoded
+    Helper.url "https://github.com/login/oauth/authorize"
+      ~params:
         [
           ("client_id", config.client_id);
           ("redirect_uri", config.redirect_uri);
@@ -55,38 +105,24 @@ module Github = struct
           (* XXX: empty scope? *)
           ("scope", StringLabels.concat ~sep:" " config.scope);
         ]
-    in
-    "https://github.com/login/oauth/authorize?" ^ params
 
   (** [access_token] performs a request to acquire an access_token. *)
   let access_token ~code config =
     log.debug (fun log -> log "getting access_token");
     let%lwt resp =
-      let body =
-        Dream_pure.Formats.to_form_urlencoded
-          [
-            ("client_id", config.client_id);
-            ("client_secret", config.client_secret);
-            ("code", code);
-          ]
-      in
-      Hyper.run
-      @@ Hyper.request "https://github.com:443/login/oauth/access_token"
-           ~method_:`POST
-           ~body:(Dream_pure.Stream.string body)
-           ~headers:
-             [
-               ("Host", "github.com");
-               ("Accept", "*/*");
-               ("User-Agent", user_agent);
-               ("Content-Type", "application/x-www-form-urlencoded");
-               (* XXX: should be added by hyper? *)
-               ("Content-Length", Int.to_string (String.length body));
-             ]
+      Helper.post "https://github.com:443/login/oauth/access_token"
+        ~body:
+          (`Form
+            [
+              ("client_id", config.client_id);
+              ("client_secret", config.client_secret);
+              ("code", code);
+            ])
+        ~headers:[("Host", "github.com"); ("Accept", "*/*")]
     in
-    let%lwt body = Dream_pure.Message.body resp in
-    match Dream_pure.Message.status resp with
-    | #Dream_pure.Status.successful ->
+    match resp with
+    | Ok resp ->
+      let%lwt body = Dream_pure.Message.body resp in
       let data = Dream_pure.Formats.from_form_urlencoded body in
       let access_token =
         ListLabels.find_map data ~f:(function
@@ -99,11 +135,7 @@ module Github = struct
         | None ->
           log.debug (fun log -> log "access_token response body=%s" body);
           Error "no `access_token` in the response")
-    | status ->
-      let status = Dream_pure.Status.status_to_string status in
-      log.debug (fun log ->
-          log "access_token response status=%s body=%s" status body);
-      Lwt.return_error ("response status code: " ^ status)
+    | Error err -> Lwt.return_error err
 
   (** [user_profile] performs a request to get user profile info. *)
   let user_profile ~access_token _config =
@@ -111,19 +143,17 @@ module Github = struct
     let exception User_profile_error of string in
     try%lwt
       let%lwt resp =
-        Hyper.run
-        @@ Hyper.request "https://api.github.com:443/user" ~method_:`GET
-             ~headers:
-               [
-                 ("Authorization", "token " ^ access_token);
-                 ("Host", "api.github.com");
-                 ("Accept", "application/json");
-                 ("User-Agent", user_agent);
-               ]
+        Helper.get "https://api.github.com:443/user"
+          ~headers:
+            [
+              ("Authorization", "token " ^ access_token);
+              ("Host", "api.github.com");
+              ("Accept", "application/json");
+            ]
       in
-      let%lwt body = Dream_pure.Message.body resp in
-      match Dream_pure.Message.status resp with
-      | #Dream_pure.Status.successful ->
+      match resp with
+      | Ok resp ->
+        let%lwt body = Dream_pure.Message.body resp in
         let json =
           try Yojson.Basic.from_string body
           with Yojson.Json_error _ ->
@@ -149,12 +179,7 @@ module Github = struct
             email = Some email;
             provider = name;
           }
-      | status ->
-        let status = Dream_pure.Status.status_to_string status in
-        log.debug (fun log ->
-            log "user_profile response status=%s body=%s" status body);
-        let reason = "response status code: " ^ status in
-        raise (User_profile_error reason)
+      | Error err -> raise (User_profile_error err)
     with User_profile_error reason -> Lwt.return_error reason
 end
 
@@ -164,13 +189,6 @@ let github ?(scope = []) ~client_id ~client_secret ~redirect_uri () =
 
     let config = { Github.client_id; client_secret; redirect_uri; scope }
   end : OAUTH2)
-
-module Helper = struct
-  let url ?(params = []) base =
-    match params with
-    | [] -> base
-    | params -> Printf.sprintf "%s?%s" base (Hyper.to_form_urlencoded params)
-end
 
 module Stack_overflow = struct
   type config = {
@@ -199,32 +217,20 @@ module Stack_overflow = struct
   let access_token ~code config =
     log.debug (fun log -> log "getting access_token");
     let%lwt resp =
-      let body =
-        Dream_pure.Formats.to_form_urlencoded
-          [
-            ("client_id", config.client_id);
-            ("client_secret", config.client_secret);
-            ("code", code);
-            ("redirect_uri", config.redirect_uri);
-          ]
-      in
-      Hyper.run
-      @@ Hyper.request "https://stackoverflow.com:443/oauth/access_token"
-           ~method_:`POST
-           ~body:(Dream_pure.Stream.string body)
-           ~headers:
-             [
-               ("Host", "stackoverflow.com");
-               ("Accept", "*/*");
-               ("User-Agent", user_agent);
-               ("Content-Type", "application/x-www-form-urlencoded");
-               (* XXX: should be added by hyper? *)
-               ("Content-Length", Int.to_string (String.length body));
-             ]
+      Helper.post "https://stackoverflow.com:443/oauth/access_token"
+        ~body:
+          (`Form
+            [
+              ("client_id", config.client_id);
+              ("client_secret", config.client_secret);
+              ("code", code);
+              ("redirect_uri", config.redirect_uri);
+            ])
+        ~headers:[("Host", "stackoverflow.com"); ("Accept", "*/*")]
     in
-    let%lwt body = Dream_pure.Message.body resp in
-    match Dream_pure.Message.status resp with
-    | #Dream_pure.Status.successful ->
+    match resp with
+    | Ok resp ->
+      let%lwt body = Dream_pure.Message.body resp in
       let data = Dream_pure.Formats.from_form_urlencoded body in
       let access_token =
         ListLabels.find_map data ~f:(function
@@ -237,45 +243,31 @@ module Stack_overflow = struct
         | None ->
           log.debug (fun log -> log "access_token response body=%s" body);
           Error "no `access_token` in the response")
-    | status ->
-      let status = Dream_pure.Status.status_to_string status in
-      log.debug (fun log ->
-          log "access_token response status=%s body=%s" status body);
-      Lwt.return_error ("response status code: " ^ status)
+    | Error err -> Lwt.return_error err
 
   let user_profile ~access_token config =
     log.debug (fun log -> log "getting user_profile");
     let exception User_profile_error of string in
     try%lwt
       let%lwt resp =
-        Hyper.run
-        @@ Hyper.request
-             (Helper.url "https://api.stackexchange.com:443/2.3/me"
-                ~params:
-                  [
-                    ("access_token", access_token);
-                    ("key", config.key);
-                    ("site", "stackoverflow");
-                  ])
-             ~method_:`GET
-             ~headers:
-               [
-                 ("Authorization", "token " ^ access_token);
-                 ("Host", "api.stackexchange.com");
-                 ("Accept", "application/json");
-                 ("User-Agent", user_agent);
-               ]
+        Helper.get "https://api.stackexchange.com:443/2.3/me"
+          ~params:
+            [
+              ("access_token", access_token);
+              ("key", config.key);
+              ("site", "stackoverflow");
+            ]
+          ~headers:
+            [
+              ("Authorization", "token " ^ access_token);
+              ("Host", "api.stackexchange.com");
+              ("Accept", "application/json");
+              ("User-Agent", user_agent);
+            ]
       in
-      let%lwt resp =
-        match%lwt Dream_encoding.with_decoded_body resp with
-        | Ok resp -> Lwt.return resp
-        | Error err ->
-          log.debug (fun log -> log "error decoding respobse: %s" err);
-          raise (User_profile_error "error decoding response")
-      in
-      let%lwt body = Dream_pure.Message.body resp in
-      match Dream_pure.Message.status resp with
-      | #Dream_pure.Status.successful ->
+      match resp with
+      | Ok resp ->
+        let%lwt body = Dream_pure.Message.body resp in
         let json =
           try Yojson.Basic.from_string body
           with Yojson.Json_error _ ->
@@ -300,12 +292,7 @@ module Stack_overflow = struct
                  (Printf.sprintf "error parsing user_profile response"))
         in
         Lwt.return_ok profile
-      | status ->
-        let status = Dream_pure.Status.status_to_string status in
-        log.debug (fun log ->
-            log "user_profile response status=%s body=%s" status body);
-        let reason = "response status code: " ^ status in
-        raise (User_profile_error reason)
+      | Error err -> raise (User_profile_error err)
     with User_profile_error reason -> Lwt.return_error reason
 end
 
