@@ -2,4 +2,4 @@
  (name dream_oauth2)
  (preprocess
   (pps lwt_ppx))
- (libraries hyper dream yojson unix))
+ (libraries hyper dream yojson unix dream-encoding))

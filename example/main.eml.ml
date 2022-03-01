@@ -1,9 +1,15 @@
-let client_id = Sys.getenv "OAUTH2_CLIENT_ID"
-let client_secret = Sys.getenv "OAUTH2_CLIENT_SECRET"
-let redirect_uri = Sys.getenv "OAUTH2_REDIRECT_URI"
+let github = Dream_oauth2.github
+  ~client_id:(Sys.getenv "GH_CLIENT_ID")
+  ~client_secret:(Sys.getenv "GH_CLIENT_SECRET")
+  ~redirect_uri:(Sys.getenv "GH_REDIRECT_URI")
+  ()
 
-let github = Dream_oauth2.oauth2_provider
-  ~client_id ~client_secret ~redirect_uri (module Dream_oauth2.Github)
+let stackoverflow = Dream_oauth2.stackoverflow
+  ~client_id:(Sys.getenv "SO_CLIENT_ID")
+  ~client_secret:(Sys.getenv "SO_CLIENT_SECRET")
+  ~key:(Sys.getenv "SO_KEY")
+  ~redirect_uri:(Sys.getenv "SO_REDIRECT_URI")
+  ()
 
 type message = {
   user : string;
@@ -30,14 +36,12 @@ let render request =
 
 % begin match Dream_oauth2.user_profile request with
 % | None ->
-%   let authorize_url =
-%     Dream_oauth2.signin_url github request
-%   in
     <p>Please sign in to chat!</p>
-    <p><a href="<%s authorize_url %>">Sign in with GitHub</a></p>
+    <p><a href="<%s Dream_oauth2.signin_url github request %>">Sign in with GitHub</a></p>
+    <p><a href="<%s Dream_oauth2.signin_url stackoverflow request %>">Sign in with StackOverflow</a></p>
     <hr>
 % | Some profile ->
-    <p>Signed in as <%s profile.Dream_oauth2.User_profile.user %>.<p>
+    <p>Signed in as <%s profile.Dream_oauth2.User_profile.display_name %> (<%s profile.provider %>).<p>
 %   let signout_form = Dream_oauth2.signout_form request in
     <p><%s! signout_form %></p>
     <hr>
@@ -55,13 +59,16 @@ let render request =
   </body>
   </html>
 
+let () = Dream.initialize_log ~level:`Debug ()
+
 let () =
-  Dream.run
+  Dream.run ~interface:"10.0.88.2" ~adjust_terminal:false
   @@ Dream.logger
   @@ Dream.memory_sessions
   @@ Dream.router [
 
     Dream_oauth2.route github;
+    Dream.scope "/so" [] [Dream_oauth2.route stackoverflow];
 
     Dream.get "/" (fun request ->
       Dream.html (render request));
@@ -74,7 +81,7 @@ let () =
         match%lwt Dream.form request with
         | `Ok ["text", text] ->
           messages :=
-            {user = profile.Dream_oauth2.User_profile.user; text}::!messages;
+            {user = profile.Dream_oauth2.User_profile.display_name; text}::!messages;
           Dream.redirect request "/"
         | _ ->
           Dream.redirect request "/");
