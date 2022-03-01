@@ -6,12 +6,36 @@ module User_profile : sig
   (** Information about an authenticated user. *)
 end
 
-val signin_url :
-  ?valid_for:float ->
+type oauth2_provider_config = {
+  client_id : string;
+  client_secret : string;
+  redirect_uri : string;
+  scope : string list;
+}
+
+module type OAUTH2_PROVIDER = sig
+  val authorize_url : state:string -> oauth2_provider_config -> string
+
+  val access_token :
+    code:string -> oauth2_provider_config -> (string, string) result Lwt.t
+
+  val user_profile :
+    access_token:string -> unit -> (User_profile.t, string) result Lwt.t
+end
+
+type oauth2_provider
+
+val oauth2_provider :
   client_id:string ->
+  client_secret:string ->
   redirect_uri:string ->
-  Dream.request ->
-  string
+  ?scope:string list ->
+  (module OAUTH2_PROVIDER) ->
+  oauth2_provider
+
+module Github : OAUTH2_PROVIDER
+
+val signin_url : ?valid_for:float -> oauth2_provider -> Dream.request -> string
 (** Generate an URL which signs user in with an identity provider.
 
     The optional [valid_for] param specifies (in seconds) the lifetime of the link, the
@@ -29,13 +53,11 @@ val signout_form : ?signout_url:string -> Dream.request -> string
   *)
 
 val route :
-  client_id:string ->
-  client_secret:string ->
   ?redirect_on_signin:string ->
   ?redirect_on_signout:string ->
   ?redirect_on_signin_expired:string ->
   ?redirect_on_signout_expired:string ->
-  unit ->
+  oauth2_provider ->
   Dream.route
 (** Create a set of routes for performing authentication with an identity provider.
 

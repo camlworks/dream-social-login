@@ -2,6 +2,9 @@ let client_id = Sys.getenv "OAUTH2_CLIENT_ID"
 let client_secret = Sys.getenv "OAUTH2_CLIENT_SECRET"
 let redirect_uri = Sys.getenv "OAUTH2_REDIRECT_URI"
 
+let github = Dream_oauth2.oauth2_provider
+  ~client_id ~client_secret ~redirect_uri (module Dream_oauth2.Github)
+
 type message = {
   user : string;
   text : string;
@@ -28,7 +31,7 @@ let render request =
 % begin match Dream_oauth2.user_profile request with
 % | None ->
 %   let authorize_url =
-%     Dream_oauth2.signin_url ~client_id ~redirect_uri request
+%     Dream_oauth2.signin_url github request
 %   in
     <p>Please sign in to chat!</p>
     <p><a href="<%s authorize_url %>">Sign in with GitHub</a></p>
@@ -58,7 +61,7 @@ let () =
   @@ Dream.memory_sessions
   @@ Dream.router [
 
-    Dream_oauth2.route ~client_id ~client_secret ();
+    Dream_oauth2.route github;
 
     Dream.get "/" (fun request ->
       Dream.html (render request));
