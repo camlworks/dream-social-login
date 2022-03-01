@@ -1,0 +1,3 @@
+[submodule "dream-encoding"]
+	path = dream-encoding
+	url = https://github.com/andreypopp/dream-encoding.git

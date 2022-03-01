@@ -1,7 +1,9 @@
 module User_profile = struct
   type t = {
-    user : string;
-    email : string;
+    id : string;
+    display_name : string;
+    email : string option;
+    provider : string;
   }
   (** Information about an authenticated user.
 
@@ -9,37 +11,38 @@ module User_profile = struct
     *)
 end
 
-type oauth2_provider_config = {
-  client_id : string;
-  client_secret : string;
-  redirect_uri : string;
-  scope : string list;
-}
-
 module type OAUTH2_PROVIDER = sig
-  val authorize_url : state:string -> oauth2_provider_config -> string
+  type config
 
-  val access_token :
-    code:string -> oauth2_provider_config -> (string, string) result Lwt.t
+  val authorize_url : state:string -> config -> string
+  val access_token : code:string -> config -> (string, string) result Lwt.t
 
   val user_profile :
-    access_token:string -> unit -> (User_profile.t, string) result Lwt.t
+    access_token:string -> config -> (User_profile.t, string) result Lwt.t
 end
 
-type oauth2_provider = {
-  config : oauth2_provider_config;
-  implementation : (module OAUTH2_PROVIDER);
-}
+module type OAUTH2 = sig
+  module Provider : OAUTH2_PROVIDER
 
-let oauth2_provider ~client_id ~client_secret ~redirect_uri ?(scope = [])
-    (implementation : (module OAUTH2_PROVIDER)) =
-  { implementation; config = { client_id; client_secret; redirect_uri; scope } }
+  val config : Provider.config
+end
+
+type oauth2 = (module OAUTH2)
 
 (* XXX: should be added by Hyper? *)
 let user_agent = "hyper/1.0.0"
 let log = Dream.sub_log "dream-oauth2"
 
-module Github : OAUTH2_PROVIDER = struct
+module Github = struct
+  type config = {
+    client_id : string;
+    client_secret : string;
+    redirect_uri : string;
+    scope : string list;
+  }
+
+  let name = "github"
+
   (** [authorize_url] is used to produce a URL to redirect browser to for
       authentication flow. *)
   let authorize_url ~state config =
@@ -103,7 +106,7 @@ module Github : OAUTH2_PROVIDER = struct
       Lwt.return_error ("response status code: " ^ status)
 
   (** [user_profile] performs a request to get user profile info. *)
-  let user_profile ~access_token () =
+  let user_profile ~access_token _config =
     log.debug (fun log -> log "getting user_profile");
     let exception User_profile_error of string in
     try%lwt
@@ -137,9 +140,15 @@ module Github : OAUTH2_PROVIDER = struct
                    (Printf.sprintf
                       "error decoding JSON: missing or invalid `%s` field" key)))
         in
-        let user = json_string_field "login" json in
+        let login = json_string_field "login" json in
         let email = json_string_field "email" json in
-        Lwt.return_ok { User_profile.user; email }
+        Lwt.return_ok
+          {
+            User_profile.id = login;
+            display_name = login;
+            email = Some email;
+            provider = name;
+          }
       | status ->
         let status = Dream_pure.Status.status_to_string status in
         log.debug (fun log ->
@@ -148,6 +157,166 @@ module Github : OAUTH2_PROVIDER = struct
         raise (User_profile_error reason)
     with User_profile_error reason -> Lwt.return_error reason
 end
+
+let github ?(scope = []) ~client_id ~client_secret ~redirect_uri () =
+  (module struct
+    module Provider = Github
+
+    let config = { Github.client_id; client_secret; redirect_uri; scope }
+  end : OAUTH2)
+
+module Helper = struct
+  let url ?(params = []) base =
+    match params with
+    | [] -> base
+    | params -> Printf.sprintf "%s?%s" base (Hyper.to_form_urlencoded params)
+end
+
+module Stack_overflow = struct
+  type config = {
+    client_id : string;
+    client_secret : string;
+    key : string;
+    redirect_uri : string;
+    scope : string list;
+  }
+
+  let name = "stackoverflow"
+
+  let authorize_url ~state config =
+    let params =
+      Hyper.to_form_urlencoded
+        [
+          ("client_id", config.client_id);
+          ("redirect_uri", config.redirect_uri);
+          ("state", state);
+          (* XXX: empty scope? *)
+          ("scope", StringLabels.concat ~sep:" " config.scope);
+        ]
+    in
+    "https://stackoverflow.com/oauth?" ^ params
+
+  let access_token ~code config =
+    log.debug (fun log -> log "getting access_token");
+    let%lwt resp =
+      let body =
+        Dream_pure.Formats.to_form_urlencoded
+          [
+            ("client_id", config.client_id);
+            ("client_secret", config.client_secret);
+            ("code", code);
+            ("redirect_uri", config.redirect_uri);
+          ]
+      in
+      Hyper.run
+      @@ Hyper.request "https://stackoverflow.com:443/oauth/access_token"
+           ~method_:`POST
+           ~body:(Dream_pure.Stream.string body)
+           ~headers:
+             [
+               ("Host", "stackoverflow.com");
+               ("Accept", "*/*");
+               ("User-Agent", user_agent);
+               ("Content-Type", "application/x-www-form-urlencoded");
+               (* XXX: should be added by hyper? *)
+               ("Content-Length", Int.to_string (String.length body));
+             ]
+    in
+    let%lwt body = Dream_pure.Message.body resp in
+    match Dream_pure.Message.status resp with
+    | #Dream_pure.Status.successful ->
+      let data = Dream_pure.Formats.from_form_urlencoded body in
+      let access_token =
+        ListLabels.find_map data ~f:(function
+          | "access_token", access_token -> Some access_token
+          | _ -> None)
+      in
+      Lwt.return
+        (match access_token with
+        | Some token -> Ok token
+        | None ->
+          log.debug (fun log -> log "access_token response body=%s" body);
+          Error "no `access_token` in the response")
+    | status ->
+      let status = Dream_pure.Status.status_to_string status in
+      log.debug (fun log ->
+          log "access_token response status=%s body=%s" status body);
+      Lwt.return_error ("response status code: " ^ status)
+
+  let user_profile ~access_token config =
+    log.debug (fun log -> log "getting user_profile");
+    let exception User_profile_error of string in
+    try%lwt
+      let%lwt resp =
+        Hyper.run
+        @@ Hyper.request
+             (Helper.url "https://api.stackexchange.com:443/2.3/me"
+                ~params:
+                  [
+                    ("access_token", access_token);
+                    ("key", config.key);
+                    ("site", "stackoverflow");
+                  ])
+             ~method_:`GET
+             ~headers:
+               [
+                 ("Authorization", "token " ^ access_token);
+                 ("Host", "api.stackexchange.com");
+                 ("Accept", "application/json");
+                 ("User-Agent", user_agent);
+               ]
+      in
+      let%lwt resp =
+        match%lwt Dream_encoding.with_decoded_body resp with
+        | Ok resp -> Lwt.return resp
+        | Error err ->
+          log.debug (fun log -> log "error decoding respobse: %s" err);
+          raise (User_profile_error "error decoding response")
+      in
+      let%lwt body = Dream_pure.Message.body resp in
+      match Dream_pure.Message.status resp with
+      | #Dream_pure.Status.successful ->
+        let json =
+          try Yojson.Basic.from_string body
+          with Yojson.Json_error _ ->
+            log.debug (fun log -> log "user_profile response body=%s" body);
+            raise (User_profile_error "error parsing JSON response")
+        in
+        let profile =
+          try
+            Yojson.Basic.Util.(
+              let user = json |> member "items" |> index 0 in
+              {
+                User_profile.id =
+                  user |> member "user_id" |> to_int |> Int.to_string;
+                display_name = user |> member "display_name" |> to_string;
+                email = None;
+                provider = name;
+              })
+          with Yojson.Basic.Util.Type_error _ ->
+            log.debug (fun log -> log "user_profile response body=%s" body);
+            raise
+              (User_profile_error
+                 (Printf.sprintf "error parsing user_profile response"))
+        in
+        Lwt.return_ok profile
+      | status ->
+        let status = Dream_pure.Status.status_to_string status in
+        log.debug (fun log ->
+            log "user_profile response status=%s body=%s" status body);
+        let reason = "response status code: " ^ status in
+        raise (User_profile_error reason)
+    with User_profile_error reason -> Lwt.return_error reason
+end
+
+let stackoverflow ?(scope = []) ~client_id ~client_secret ~redirect_uri ~key ()
+    =
+  (module struct
+    module Provider = Stack_overflow
+
+    let config =
+      { Stack_overflow.client_id; client_secret; redirect_uri; key; scope }
+  end : OAUTH2)
 
 module type COOKIE_SPEC = sig
   val cookie_name : string
@@ -216,23 +385,42 @@ module Auth_cookie = Cookie_with_expiration (struct
 
   type value = User_profile.t
 
-  let value_to_yojson { User_profile.user; email } =
-    `Assoc [("user", `String user); ("email", `String email)]
+  let value_to_yojson { User_profile.id; display_name; email; provider } =
+    `Assoc
+      [
+        ("id", `String id);
+        ("display_name", `String display_name);
+        ( "email",
+          email
+          |> Option.map (fun v -> `String v)
+          |> Option.value ~default:`Null );
+        ("provider", `String provider);
+      ]
 
   let value_of_yojson json =
     match json with
-    | `Assoc [("user", `String user); ("email", `String email)] ->
-      Ok { User_profile.user; email }
+    | `Assoc
+        [
+          ("id", `String id);
+          ("display_name", `String display_name);
+          ("email", email);
+          ("provider", `String provider);
+        ] -> (
+      match email with
+      | `String email ->
+        Ok { User_profile.id; display_name; email = Some email; provider }
+      | `Null -> Ok { User_profile.id; display_name; email = None; provider }
+      | _ -> Error "invalid User_profile.t")
     | _ -> Error "invalid User_profile.t"
 end)
 
 let user_profile = Auth_cookie.get
 let signout = Auth_cookie.drop
 
-let signin_url ?(valid_for = 60. *. 60. *. 1. (* 1 hour *)) provider req =
-  let module P = (val provider.implementation) in
+let signin_url ?(valid_for = 60. *. 60. *. 1. (* 1 hour *)) oauth2 req =
+  let module Oauth2 = (val oauth2 : OAUTH2) in
   let state = Dream.csrf_token ~valid_for req in
-  P.authorize_url provider.config ~state
+  Oauth2.Provider.authorize_url Oauth2.config ~state
 
 let signout_form ?(signout_url = "/oauth2/signout") req =
   Printf.sprintf
@@ -244,8 +432,8 @@ let signout_form ?(signout_url = "/oauth2/signout") req =
 
 let route ?(redirect_on_signin = "/") ?(redirect_on_signout = "/")
     ?(redirect_on_signin_expired = "/") ?(redirect_on_signout_expired = "/")
-    provider =
-  let module P = (val provider.implementation) in
+    oauth2 =
+  let module Oauth2 = (val oauth2 : OAUTH2) in
   Dream.scope "/" []
     [
       Dream.post "/oauth2/signout" (fun req ->
@@ -292,12 +480,14 @@ let route ?(redirect_on_signin = "/") ?(redirect_on_signout = "/")
               | None -> error "no `code` parameter in callback request"
             in
             let%lwt access_token =
-              match%lwt P.access_token provider.config ~code with
+              match%lwt Oauth2.Provider.access_token Oauth2.config ~code with
               | Ok access_token -> Lwt.return access_token
               | Error err -> error ("error getting access_token: " ^ err)
             in
             let%lwt user_profile =
-              match%lwt P.user_profile ~access_token () with
+              match%lwt
+                Oauth2.Provider.user_profile ~access_token Oauth2.config
+              with
               | Ok user_profile -> Lwt.return user_profile
               | Error reason -> error ("error getting user_profile: " ^ reason)
             in
