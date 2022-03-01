@@ -9,36 +9,61 @@ module User_profile = struct
     *)
 end
 
+type oauth2_provider_config = {
+  client_id : string;
+  client_secret : string;
+  redirect_uri : string;
+  scope : string list;
+}
+
+module type OAUTH2_PROVIDER = sig
+  val authorize_url : state:string -> oauth2_provider_config -> string
+
+  val access_token :
+    code:string -> oauth2_provider_config -> (string, string) result Lwt.t
+
+  val user_profile :
+    access_token:string -> unit -> (User_profile.t, string) result Lwt.t
+end
+
+type oauth2_provider = {
+  config : oauth2_provider_config;
+  implementation : (module OAUTH2_PROVIDER);
+}
+
+let oauth2_provider ~client_id ~client_secret ~redirect_uri ?(scope = [])
+    (implementation : (module OAUTH2_PROVIDER)) =
+  { implementation; config = { client_id; client_secret; redirect_uri; scope } }
+
 (* XXX: should be added by Hyper? *)
 let user_agent = "hyper/1.0.0"
 let log = Dream.sub_log "dream-oauth2"
 
-module Github_provider = struct
+module Github : OAUTH2_PROVIDER = struct
   (** [authorize_url] is used to produce a URL to redirect browser to for
       authentication flow. *)
-  let authorize_url ~client_id ~redirect_uri ~state ?(scope = ["read:user"]) ()
-      =
+  let authorize_url ~state config =
     let params =
       Hyper.to_form_urlencoded
         [
-          ("client_id", client_id);
-          ("redirect_uri", redirect_uri);
+          ("client_id", config.client_id);
+          ("redirect_uri", config.redirect_uri);
           ("state", state);
           (* XXX: empty scope? *)
-          ("scope", String.concat " " scope);
+          ("scope", StringLabels.concat ~sep:" " config.scope);
         ]
     in
     "https://github.com/login/oauth/authorize?" ^ params
 
   (** [access_token] performs a request to acquire an access_token. *)
-  let access_token ~client_id ~client_secret ~code () =
+  let access_token ~code config =
     log.debug (fun log -> log "getting access_token");
     let%lwt resp =
       let body =
         Dream_pure.Formats.to_form_urlencoded
           [
-            ("client_id", client_id);
-            ("client_secret", client_secret);
+            ("client_id", config.client_id);
+            ("client_secret", config.client_secret);
             ("code", code);
           ]
       in
@@ -204,10 +229,10 @@ end)
 let user_profile = Auth_cookie.get
 let signout = Auth_cookie.drop
 
-let signin_url ?(valid_for = 60. *. 60. *. 1. (* 1 hour *)) ~client_id
-    ~redirect_uri req =
+let signin_url ?(valid_for = 60. *. 60. *. 1. (* 1 hour *)) provider req =
+  let module P = (val provider.implementation) in
   let state = Dream.csrf_token ~valid_for req in
-  Github_provider.authorize_url ~client_id ~redirect_uri ~state ()
+  P.authorize_url provider.config ~state
 
 let signout_form ?(signout_url = "/oauth2/signout") req =
   Printf.sprintf
@@ -217,9 +242,10 @@ let signout_form ?(signout_url = "/oauth2/signout") req =
       </form>|}
     signout_url (Dream.csrf_tag req)
 
-let route ~client_id ~client_secret ?(redirect_on_signin = "/")
-    ?(redirect_on_signout = "/") ?(redirect_on_signin_expired = "/")
-    ?(redirect_on_signout_expired = "/") () =
+let route ?(redirect_on_signin = "/") ?(redirect_on_signout = "/")
+    ?(redirect_on_signin_expired = "/") ?(redirect_on_signout_expired = "/")
+    provider =
+  let module P = (val provider.implementation) in
   Dream.scope "/" []
     [
       Dream.post "/oauth2/signout" (fun req ->
@@ -266,16 +292,14 @@ let route ~client_id ~client_secret ?(redirect_on_signin = "/")
               | None -> error "no `code` parameter in callback request"
             in
             let%lwt access_token =
-              match%lwt
-                Github_provider.access_token ~client_id ~client_secret ~code ()
-              with
+              match%lwt P.access_token provider.config ~code with
               | Ok access_token -> Lwt.return access_token
               | Error err -> error ("error getting access_token: " ^ err)
             in
             let%lwt user_profile =
-              match%lwt Github_provider.user_profile ~access_token () with
+              match%lwt P.user_profile ~access_token () with
               | Ok user_profile -> Lwt.return user_profile
-              | Error reason -> error ("error getting user_profle: " ^ reason)
+              | Error reason -> error ("error getting user_profile: " ^ reason)
             in
             Auth_cookie.set res_ok req user_profile;
             Lwt.return res_ok
