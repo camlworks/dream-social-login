@@ -1,14 +1,20 @@
 let github = Dream_oauth2.github
   ~client_id:(Sys.getenv "GH_CLIENT_ID")
   ~client_secret:(Sys.getenv "GH_CLIENT_SECRET")
-  ~redirect_uri:(Sys.getenv "GH_REDIRECT_URI")
+  ~redirect_uri:(Sys.getenv "REDIRECT_URI")
   ()
 
 let stackoverflow = Dream_oauth2.stackoverflow
   ~client_id:(Sys.getenv "SO_CLIENT_ID")
   ~client_secret:(Sys.getenv "SO_CLIENT_SECRET")
   ~key:(Sys.getenv "SO_KEY")
-  ~redirect_uri:(Sys.getenv "SO_REDIRECT_URI")
+  ~redirect_uri:(Sys.getenv "REDIRECT_URI")
+  ()
+
+let twitch = Dream_oauth2.twitch
+  ~client_id:(Sys.getenv "TWITCH_CLIENT_ID")
+  ~client_secret:(Sys.getenv "TWITCH_CLIENT_SECRET")
+  ~redirect_uri:(Sys.getenv "REDIRECT_URI")
   ()
 
 type message = {
@@ -39,6 +45,7 @@ let render request =
     <p>Please sign in to chat!</p>
     <p><a href="<%s Dream_oauth2.signin_url github request %>">Sign in with GitHub</a></p>
     <p><a href="<%s Dream_oauth2.signin_url stackoverflow request %>">Sign in with StackOverflow</a></p>
+    <p><a href="<%s Dream_oauth2.signin_url twitch request %>">Sign in with Twitch</a></p>
     <hr>
 % | Some profile ->
     <p>Signed in as <%s profile.Dream_oauth2.User_profile.display_name %> (<%s profile.provider %>).<p>
@@ -62,13 +69,12 @@ let render request =
 let () = Dream.initialize_log ~level:`Debug ()
 
 let () =
-  Dream.run ~interface:"10.0.88.2" ~adjust_terminal:false
+  Dream.run ~tls:true
   @@ Dream.logger
   @@ Dream.memory_sessions
   @@ Dream.router [
 
-    Dream_oauth2.route github;
-    Dream.scope "/so" [] [Dream_oauth2.route stackoverflow];
+    Dream_oauth2.route [github; twitch; stackoverflow];
 
     Dream.get "/" (fun request ->
       Dream.html (render request));
