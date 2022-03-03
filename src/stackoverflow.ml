@@ -3,22 +3,20 @@ let log = Dream.sub_log "dream-oauth2-stackoverflow"
 type config = {
   client_id : string;
   client_secret : string;
-  key : string;
   redirect_uri : string;
+  key : string;
 }
 
-let name = "stackoverflow"
-
-let authorize_url ~state config =
+let authorize_url config req =
   Hyper_helper.url "https://stackoverflow.com/oauth"
     ~params:
       [
         ("client_id", config.client_id);
         ("redirect_uri", config.redirect_uri);
-        ("state", state);
+        ("state", Dream.csrf_token req);
       ]
 
-let access_token ~code config =
+let access_token config _request ~code =
   log.debug (fun log -> log "getting access_token");
   let%lwt resp =
     Hyper_helper.post "https://stackoverflow.com:443/oauth/access_token"
@@ -49,7 +47,7 @@ let access_token ~code config =
         Error "no `access_token` in the response")
   | Error err -> Lwt.return_error err
 
-let user_profile ~access_token config =
+let user_profile config _request ~access_token =
   log.debug (fun log -> log "getting user_profile");
   Lwt_result.bind
     (Hyper_helper.get "https://api.stackexchange.com:443/2.3/me"
@@ -74,5 +72,5 @@ let user_profile ~access_token config =
                user |> member "user_id" |> to_int |> Int.to_string;
              display_name = user |> member "display_name" |> to_string;
              email = None;
-             provider = name;
+             provider = "stackoverflow";
            }))
