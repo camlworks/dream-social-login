@@ -1,0 +1,7 @@
+(library
+ (name dream_oidc)
+ (package dream-oidc)
+ (preprocess
+  (pps lwt_ppx))
+ (libraries dream yojson unix oidc dream_oauth2))
+

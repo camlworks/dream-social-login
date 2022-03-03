@@ -9,4 +9,4 @@ build:
 	dune $@
 
 start:
-	dune exec dream-oauth2-example
+	dune exec dream-oidc-example
