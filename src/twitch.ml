@@ -6,20 +6,18 @@ type config = {
   redirect_uri : string;
 }
 
-let name = "twitch"
-
-let authorize_url ~state config =
+let authorize_url config request =
   Hyper_helper.url "https://id.twitch.tv/oauth2/authorize"
     ~params:
       [
         ("client_id", config.client_id);
         ("redirect_uri", config.redirect_uri);
-        ("state", state);
+        ("state", Dream.csrf_token request);
         ("scope", "user:read:email");
         ("response_type", "code");
       ]
 
-let access_token ~code config =
+let access_token config _request ~code =
   log.debug (fun log -> log "getting access_token");
   let%lwt resp =
     Hyper_helper.post "https://id.twitch.tv:443/oauth2/token"
@@ -43,7 +41,7 @@ let access_token ~code config =
         Ok access_token)
   | Error err -> Lwt.return_error err
 
-let user_profile ~access_token config =
+let user_profile config _request ~access_token =
   log.debug (fun log -> log "getting user_profile");
   Lwt_result.bind
     (Hyper_helper.get "https://api.twitch.tv:443/helix/users" ~params:[]
@@ -62,5 +60,5 @@ let user_profile ~access_token config =
              Oauth2.User_profile.id = user |> member "login" |> to_string;
              display_name = user |> member "display_name" |> to_string;
              email = Some (user |> member "email" |> to_string);
-             provider = name;
+             provider = "twitch";
            }))
