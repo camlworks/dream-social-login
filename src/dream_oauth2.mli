@@ -11,13 +11,16 @@ end
 type authenticate_result =
   [ `Ok of User_profile.t
   | `Expired
+  | `Provider_error of string * string option
   | `Error of string ]
 (** Result of authentication with OAuth2 provider.
 
     - [`Ok profile] is a successful case and returns a [User_profile.t] value.
     - [`Expired] signifies that authentication flow is not valid anymore and
       should be restarted.
-    - [`Error message] occurs if something goes wrong in the process of
+    - [`Provider_error (message, desc)] is the error returned from the provider
+      with the optional description.
+    - [`Error message] occurs if something else goes wrong in the process of
       authentication.
   *)
 

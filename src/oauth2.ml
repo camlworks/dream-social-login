@@ -10,6 +10,7 @@ end
 type authenticate_result =
   [ `Ok of User_profile.t
   | `Expired
+  | `Provider_error of string * string option
   | `Error of string ]
 
 let log = Dream.sub_log "dream-oauth2"
@@ -24,7 +25,9 @@ let authenticate ~access_token ~user_profile req =
     let () =
       match Dream.query req "error" with
       | None -> ()
-      | Some err -> errorf "provider returned: %s" err
+      | Some err ->
+        let desc = Dream.query req "error_description" in
+        raise (Return (`Provider_error (err, desc)))
     in
     let%lwt () =
       let state =

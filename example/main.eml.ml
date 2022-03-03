@@ -116,7 +116,7 @@ let handle_authenticate_result request result =
   | `Ok user_profile ->
     let%lwt () = signin user_profile request in
     Dream.redirect request "/"
-  | `Error message ->
+  | `Error message | `Provider_error (message, _) ->
     Dream.respond ~status:`Unauthorized message
   | `Expired ->
     Dream.redirect request "/"
