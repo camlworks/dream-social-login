@@ -21,25 +21,22 @@ type authenticate_result =
       authentication.
   *)
 
-type authenticate = Dream.request -> authenticate_result Lwt.t
-(** This represents a function which performs the authentication with the OAuth2
-    callback request.
-
-    This function should be used in OAuth2 callback, when an OAuth2 provider
-    redirects back to your application.
-
-    See [authenticate_result] description on how to handle the result of this
-    function. *)
-
 module Github : sig
   type config = {
     client_id : string;
     client_secret : string;
     redirect_uri : string;
   }
+  (** Configuration required for Github OAuth2 client.
+
+      See https://docs.github.com/en/developers/apps/building-oauth-apps *)
 
   val authorize_url : config -> Dream.request -> string
-  val authenticate : config -> authenticate
+  (** Produce an URL to start signin flow with GitHub. *)
+
+  val authenticate : config -> Dream.request -> authenticate_result Lwt.t
+  (** Get the result of authentication. This should be called inside the OAuth2
+      callback handler.*)
 end
 
 module Twitch : sig
@@ -48,9 +45,16 @@ module Twitch : sig
     client_secret : string;
     redirect_uri : string;
   }
+  (** Configuration required for Twitch OAuth2 client.
+
+      See https://dev.twitch.tv/docs/authentication *)
 
   val authorize_url : config -> Dream.request -> string
-  val authenticate : config -> authenticate
+  (** Produce an URL to start signin flow with Twitch. *)
+
+  val authenticate : config -> Dream.request -> authenticate_result Lwt.t
+  (** Get the result of authentication. This should be called inside the OAuth2
+      callback handler.*)
 end
 
 module Stackoverflow : sig
@@ -60,7 +64,14 @@ module Stackoverflow : sig
     redirect_uri : string;
     key : string;
   }
+  (** Configuration required for Stackoverflow OAuth2 client.
+
+      See https://api.stackexchange.com/docs/authentication *)
 
   val authorize_url : config -> Dream.request -> string
-  val authenticate : config -> authenticate
+  (** Produce an URL to start signin flow with Stackoverflow. *)
+
+  val authenticate : config -> Dream.request -> authenticate_result Lwt.t
+  (** Get the result of authentication. This should be called inside the OAuth2
+      callback handler.*)
 end
