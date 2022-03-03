@@ -25,10 +25,18 @@ let handle_resp resp =
     log.debug (fun log -> log "request failed status=%s body=%s" status body);
     Lwt.return_error ("response status code: " ^ status)
 
-let post ?params ?(headers = []) ?body url_base =
+let post ?(headers = []) ?body uri =
+  let uri =
+    match Uri.scheme uri with
+    | Some "https" -> Uri.with_uri ~port:(Some 443) uri
+    | _ -> uri
+  in
   let body, headers =
     match body with
     | None -> (None, headers)
+    | Some (`String body) ->
+      ( Some (Dream_pure.Stream.string body),
+        ("Content-Length", Int.to_string (String.length body)) :: headers )
     | Some (`Form params) ->
       let body = Dream_pure.Formats.to_form_urlencoded params in
       ( Some (Dream_pure.Stream.string body),
@@ -38,26 +46,39 @@ let post ?params ?(headers = []) ?body url_base =
   in
   Lwt.bind
     (Hyper.run
-    @@ Hyper.request (url ?params url_base) ~method_:`POST ?body
-         ~headers:(("User-Agent", user_agent) :: headers))
+    @@ Hyper.request (Uri.to_string uri) ~method_:`POST ?body
+         ~headers:
+           (("Host", Uri.host uri |> Option.get)
+           :: ("User-Agent", user_agent)
+           :: headers))
     handle_resp
 
-let get ?params ?(headers = []) url_base =
+let get ?(headers = []) uri =
+  let uri =
+    match Uri.scheme uri with
+    | Some "https" -> Uri.with_uri ~port:(Some 443) uri
+    | _ -> uri
+  in
   Lwt.bind
     (Hyper.run
-    @@ Hyper.request (url ?params url_base) ~method_:`GET
-         ~headers:(("User-Agent", user_agent) :: headers))
+    @@ Hyper.request (Uri.to_string uri) ~method_:`GET
+         ~headers:
+           (("Host", Uri.host uri |> Option.get)
+           :: ("User-Agent", user_agent)
+           :: headers))
     handle_resp
+
+let parse_json ~f data =
+  match Yojson.Basic.from_string data with
+  | exception Yojson.Json_error _ ->
+    log.debug (fun log -> log "error parsing response json body=%s" data);
+    Error "error parsing json response body"
+  | json -> (
+    try f json
+    with Yojson.Basic.Util.Type_error _ | Yojson.Safe.Util.Type_error _ ->
+      log.debug (fun log -> log "error parsing response json body=%s" data);
+      Error "error parsing json response body")
 
 let parse_json_body ~f resp =
   let%lwt body = Dream_pure.Message.body resp in
-  match Yojson.Basic.from_string body with
-  | exception Yojson.Json_error _ ->
-    log.debug (fun log -> log "error parsing response json body=%s" body);
-    Lwt.return_error "error parsing json response body"
-  | json ->
-    Lwt.return
-      (try f json
-       with Yojson.Basic.Util.Type_error _ ->
-         log.debug (fun log -> log "error parsing response json body=%s" body);
-         Error "error parsing json response body")
+  Lwt.return (parse_json ~f body)

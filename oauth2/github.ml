@@ -6,21 +6,28 @@ type config = {
   redirect_uri : string;
 }
 
-(** [authorize_url] is used to produce a URL to redirect browser to for
-      authentication flow. *)
+let authorize_endpoint =
+  Uri.of_string "https://github.com/login/oauth/authorize"
+
+let token_endpoint = Uri.of_string "https://github.com/login/oauth/access_token"
+let userinfo_endpoint = Uri.of_string "https://api.github.com/user"
+
 let authorize_url config req =
-  Hyper_helper.url "https://github.com/login/oauth/authorize"
-    ~params:
-      [
-        ("client_id", config.client_id);
-        ("redirect_uri", config.redirect_uri);
-        ("state", Dream.csrf_token req);
-      ]
+  authorize_endpoint
+  |> Uri.with_uri
+       ~query:
+         (Some
+            [
+              ("client_id", [config.client_id]);
+              ("redirect_uri", [config.redirect_uri]);
+              ("state", [Dream.csrf_token req]);
+            ])
+  |> Uri.to_string
 
 let access_token config _req ~code =
   log.debug (fun log -> log "getting access_token");
   Lwt_result.bind
-    (Hyper_helper.post "https://github.com:443/login/oauth/access_token"
+    (Hyper_helper.post token_endpoint
        ~body:
          (`Form
            [
@@ -28,7 +35,7 @@ let access_token config _req ~code =
              ("client_secret", config.client_secret);
              ("code", code);
            ])
-       ~headers:[("Host", "github.com"); ("Accept", "*/*")])
+       ~headers:[("Accept", "*/*")])
     (fun resp ->
       let%lwt body = Dream_pure.Message.body resp in
       let data = Dream_pure.Formats.from_form_urlencoded body in
@@ -47,11 +54,10 @@ let access_token config _req ~code =
 let user_profile _config _req ~access_token =
   log.debug (fun log -> log "getting user_profile");
   Lwt_result.bind
-    (Hyper_helper.get "https://api.github.com:443/user"
+    (Hyper_helper.get userinfo_endpoint
        ~headers:
          [
            ("Authorization", "token " ^ access_token);
-           ("Host", "api.github.com");
            ("Accept", "application/json");
          ])
     (Hyper_helper.parse_json_body ~f:(fun json ->
