@@ -1,5 +1,6 @@
 (executable
  (public_name dream-oauth2-example)
+ (package dream-oauth2)
  (name main)
  (preprocess
   (pps lwt_ppx))

@@ -1,5 +1,6 @@
 (library
  (name dream_oauth2)
+ (package dream-oauth2)
  (preprocess
   (pps lwt_ppx))
  (libraries hyper dream yojson unix dream-encoding))

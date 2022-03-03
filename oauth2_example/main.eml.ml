@@ -130,7 +130,7 @@ let handle_authenticate_result request result =
     Dream.redirect request "/"
 
 let () =
-  Dream.run ~tls:true
+  Dream.run ~tls:true ~interface:"10.0.88.2"
   @@ Dream.logger
   @@ Dream.memory_sessions
   @@ Dream.router [

@@ -1,8 +1,8 @@
 opam-version: "2.0"
-synopsis: "Authenticate with external services in Dream apps"
+synopsis: "OAuth2 authentication for Dream"
 description: """
-This library allows one to add authentication with external identity provides
-(currently GitHub only) in Dream applications.
+This library allows one to add authentication with OAuth2 providers to Dream
+applications.
 """
 homepage: "https://github.com/camlworks/dream-social-login"
 maintainer: "Andrey Popp <me@andreypopp.com>"
