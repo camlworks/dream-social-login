@@ -11,7 +11,7 @@ end
 type authenticate_result =
   [ `Ok of User_profile.t
   | `Expired
-  | `Provider_error of string * string option
+  | `Provider_error of provider_error * string option
   | `Error of string ]
 (** Result of authentication with OAuth2 provider.
 
@@ -23,6 +23,17 @@ type authenticate_result =
     - [`Error message] occurs if something else goes wrong in the process of
       authentication.
   *)
+
+and provider_error =
+  [ `Invalid_request
+  | `Unauthorized_client
+  | `Access_denied
+  | `Unsupported_response_type
+  | `Invalid_scope
+  | `Server_error
+  | `Temporarily_unavailable ]
+
+val provider_error_to_string : provider_error -> string
 
 module Github : sig
   type config = {

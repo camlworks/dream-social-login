@@ -7,10 +7,39 @@ module User_profile = struct
   }
 end
 
+type provider_error =
+  [ `Invalid_request
+  | `Unauthorized_client
+  | `Access_denied
+  | `Unsupported_response_type
+  | `Invalid_scope
+  | `Server_error
+  | `Temporarily_unavailable ]
+(** See https://www.rfc-editor.org/rfc/rfc6749.html#section-4.1.2.1 *)
+
+let provider_error_of_string = function
+  | "invalid_request" -> Some `Invalid_request
+  | "unauthorized_client" -> Some `Unauthorized_client
+  | "access_denied" -> Some `Access_denied
+  | "unsupported_response_type" -> Some `Unsupported_response_type
+  | "invalid_scope" -> Some `Invalid_scope
+  | "server_error" -> Some `Server_error
+  | "temporarily_unavailable" -> Some `Temporarily_unavailable
+  | _ -> None
+
+let provider_error_to_string = function
+  | `Invalid_request -> "invalid_request"
+  | `Unauthorized_client -> "unauthorized_client"
+  | `Access_denied -> "access_denied"
+  | `Unsupported_response_type -> "unsupported_response_type"
+  | `Invalid_scope -> "invalid_scope"
+  | `Server_error -> "server_error"
+  | `Temporarily_unavailable -> "temporarily_unavailable"
+
 type authenticate_result =
   [ `Ok of User_profile.t
   | `Expired
-  | `Provider_error of string * string option
+  | `Provider_error of provider_error * string option
   | `Error of string ]
 
 let log = Dream.sub_log "dream-oauth2"
@@ -25,9 +54,12 @@ let authenticate ~access_token ~user_profile req =
     let () =
       match Dream.query req "error" with
       | None -> ()
-      | Some err ->
-        let desc = Dream.query req "error_description" in
-        raise (Return (`Provider_error (err, desc)))
+      | Some err -> (
+        match provider_error_of_string err with
+        | Some err ->
+          let desc = Dream.query req "error_description" in
+          raise (Return (`Provider_error (err, desc)))
+        | None -> errorf "provider returned unknown error code: %s" err)
     in
     let%lwt () =
       let state =
