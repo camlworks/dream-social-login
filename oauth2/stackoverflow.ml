@@ -7,19 +7,29 @@ type config = {
   key : string;
 }
 
+let authorize_endpoint = Uri.of_string "https://stackoverflow.com/oauth"
+
+let token_endpoint =
+  Uri.of_string "https://stackoverflow.com/oauth/access_token"
+
+let userinfo_endpoint = Uri.of_string "https://api.stackexchange.com/2.3/me"
+
 let authorize_url config req =
-  Hyper_helper.url "https://stackoverflow.com/oauth"
-    ~params:
-      [
-        ("client_id", config.client_id);
-        ("redirect_uri", config.redirect_uri);
-        ("state", Dream.csrf_token req);
-      ]
+  authorize_endpoint
+  |> Uri.with_uri
+       ~query:
+         (Some
+            [
+              ("client_id", [config.client_id]);
+              ("redirect_uri", [config.redirect_uri]);
+              ("state", [Dream.csrf_token req]);
+            ])
+  |> Uri.to_string
 
 let access_token config _request ~code =
   log.debug (fun log -> log "getting access_token");
   let%lwt resp =
-    Hyper_helper.post "https://stackoverflow.com:443/oauth/access_token"
+    Hyper_helper.post token_endpoint
       ~body:
         (`Form
           [
@@ -28,7 +38,7 @@ let access_token config _request ~code =
             ("code", code);
             ("redirect_uri", config.redirect_uri);
           ])
-      ~headers:[("Host", "stackoverflow.com"); ("Accept", "*/*")]
+      ~headers:[("Accept", "*/*")]
   in
   match resp with
   | Ok resp ->
@@ -50,17 +60,18 @@ let access_token config _request ~code =
 let user_profile config _request ~access_token =
   log.debug (fun log -> log "getting user_profile");
   Lwt_result.bind
-    (Hyper_helper.get "https://api.stackexchange.com:443/2.3/me"
-       ~params:
-         [
-           ("access_token", access_token);
-           ("key", config.key);
-           ("site", "stackoverflow");
-         ]
+    (Hyper_helper.get
+       (Uri.with_uri userinfo_endpoint
+          ~query:
+            (Some
+               [
+                 ("access_token", [access_token]);
+                 ("key", [config.key]);
+                 ("site", ["stackoverflow"]);
+               ]))
        ~headers:
          [
            ("Authorization", "token " ^ access_token);
-           ("Host", "api.stackexchange.com");
            ("Accept", "application/json");
          ])
     (Hyper_helper.parse_json_body ~f:(fun json ->
