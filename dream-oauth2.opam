@@ -34,7 +34,7 @@ build: [
   ["dune" "install" "-p" name "--create-install-files" name]
 ]
 pin-depends: [
-  ["hyper.1.0.0~alpha1" "git+https://github.com/andreypopp/hyper.git#144e71c"]
+  ["hyper.1.0.0~alpha1" "git+https://github.com/andreypopp/hyper.git#1f33c54"]
   ["dream.1.0.0~alpha4" "git+https://github.com/aantron/dream.git#dcc3513"]
   ["dream-httpaf.1.0.0~alpha4" "git+https://github.com/aantron/dream.git#dcc3513"]
   ["dream-pure.1.0.0~alpha4" "git+https://github.com/aantron/dream.git#dcc3513"]
