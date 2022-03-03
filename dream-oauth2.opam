@@ -10,6 +10,7 @@ authors: ["Andrey Popp <me@andreypopp.com>"]
 bug-reports: "https://github.com/camlworks/dream-social-login/issues"
 depends: [
   "dream" {>= "1.0.0~alpha4"}
+  "dream-encoding"
   "dune" {>= "2.9.0"}
   "hyper" {= "1.0.0~alpha1"}
   "lwt_ppx"
@@ -37,4 +38,5 @@ pin-depends: [
   ["dream.1.0.0~alpha4" "git+https://github.com/aantron/dream.git#dcc3513"]
   ["dream-httpaf.1.0.0~alpha4" "git+https://github.com/aantron/dream.git#dcc3513"]
   ["dream-pure.1.0.0~alpha4" "git+https://github.com/aantron/dream.git#dcc3513"]
+  ["dream-encoding.dev" "git+https://github.com/andreypopp/dream-encoding.git#9e8b8ee"]
 ]
