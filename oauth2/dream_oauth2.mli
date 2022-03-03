@@ -34,6 +34,7 @@ and provider_error =
   | `Temporarily_unavailable ]
 
 val provider_error_to_string : provider_error -> string
+val provider_error_of_string : string -> provider_error option
 
 module Github : sig
   type config = {
@@ -88,4 +89,29 @@ module Stackoverflow : sig
   val authenticate : config -> Dream.request -> authenticate_result Lwt.t
   (** Get the result of authentication. This should be called inside the OAuth2
       callback handler.*)
+end
+
+module Internal : sig
+  module Hyper_helper : sig
+    val get :
+      ?headers:(string * string) list ->
+      Uri.t ->
+      (Dream.response, string) Lwt_result.t
+
+    val post :
+      ?headers:(string * string) list ->
+      ?body:[`Form of (string * string) list | `String of string] ->
+      Uri.t ->
+      (Dream.response, string) Lwt_result.t
+
+    val url : ?params:(string * string) list -> string -> string
+
+    val parse_json_body :
+      f:(Yojson.Basic.t -> ('a, string) result) ->
+      Dream.response ->
+      ('a, string) Lwt_result.t
+
+    val parse_json :
+      f:(Yojson.Basic.t -> ('a, string) result) -> string -> ('a, string) result
+  end
 end
