@@ -1,10 +1,10 @@
 (executable
- (public_name dream-oauth2-example)
- (package dream-oauth2)
+ (public_name dream-oidc-example)
+ (package dream-oidc)
  (name main)
  (preprocess
   (pps lwt_ppx))
- (libraries dream hyper uri dream_oauth2))
+ (libraries dream hyper uri dream_oidc dream_oauth2))
 
 (rule
  (targets main.ml)

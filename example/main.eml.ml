@@ -35,6 +35,12 @@ let twitch = {
   redirect_uri = Sys.getenv "TWITCH_REDIRECT_URI";
 }
 
+let google = Dream_oidc.configure
+  ~client_id:(Sys.getenv "GOOGLE_CLIENT_ID")
+  ~client_secret:(Sys.getenv "GOOGLE_CLIENT_SECRET")
+  ~redirect_uri:(Sys.getenv "GOOGLE_REDIRECT_URI")
+  "https://accounts.google.com"
+
 (* Now provide functions to signin, signout and query current user (if any) from
    the request.
 
@@ -84,6 +90,7 @@ let render request =
     <p><a href="<%s Dream_oauth2.Github.authorize_url github request %>">Sign in with GitHub</a></p>
     <p><a href="<%s Dream_oauth2.Stackoverflow.authorize_url stackoverflow request %>">Sign in with StackOverflow</a></p>
     <p><a href="<%s Dream_oauth2.Twitch.authorize_url twitch request %>">Sign in with Twitch</a></p>
+    <p><a href="<%s Dream_oidc.authorize_url google request %>">Sign in with Google</a></p>
     <hr>
 % | Some user ->
     <p>Signed in as <%s user %>.<p>
@@ -130,7 +137,7 @@ let handle_authenticate_result request result =
     Dream.redirect request "/"
 
 let () =
-  Dream.run ~tls:true ~interface:"10.0.88.2"
+  Dream.run ~tls:true ~interface:"10.0.88.2" ~adjust_terminal:false
   @@ Dream.logger
   @@ Dream.memory_sessions
   @@ Dream.router [
@@ -156,6 +163,13 @@ let () =
       let%lwt authenticate_result =
         Dream_oauth2.Twitch.authenticate
           twitch request
+      in
+      handle_authenticate_result request authenticate_result
+    );
+    Dream.get "/oidc/callback/google" (fun request ->
+      let%lwt authenticate_result =
+        Dream_oidc.authenticate
+          google request
       in
       handle_authenticate_result request authenticate_result
     );
