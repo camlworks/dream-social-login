@@ -13,6 +13,8 @@ let messages = ref [
 (* First we configure OAuth2 providers for GitHub, Stackoverflow and Twitch
    respectively. *)
 
+let () = Dream.initialize_log ~level:`Debug ()
+
 let github = {
   Dream_oauth2.Github.
   client_id = Sys.getenv "GH_CLIENT_ID";
@@ -35,11 +37,31 @@ let twitch = {
   redirect_uri = Sys.getenv "TWITCH_REDIRECT_URI";
 }
 
+let microsoft = Dream_oidc.configure
+  ~client_id:(Sys.getenv "MS_CLIENT_ID")
+  ~client_secret:(Sys.getenv "MS_CLIENT_SECRET")
+  ~redirect_uri:(Sys.getenv "MS_REDIRECT_URI")
+  "https://login.microsoftonline.com/consumers/v2.0"
+
 let google = Dream_oidc.configure
   ~client_id:(Sys.getenv "GOOGLE_CLIENT_ID")
   ~client_secret:(Sys.getenv "GOOGLE_CLIENT_SECRET")
   ~redirect_uri:(Sys.getenv "GOOGLE_REDIRECT_URI")
   "https://accounts.google.com"
+
+(* XXX: See https://github.com/aantron/hyper/issues/5 *)
+(* let gitlab = Dream_oidc.configure *)
+(*   ~client_id:(Sys.getenv "GITLAB_CLIENT_ID") *)
+(*   ~client_secret:(Sys.getenv "GITLAB_CLIENT_SECRET") *)
+(*   ~redirect_uri:(Sys.getenv "GITLAB_REDIRECT_URI") *)
+(*   "https://gitlab.com" *)
+
+(* XXX: See https://github.com/ulrikstrid/ocaml-oidc/issues/11 *)
+let twitch_oidc = Dream_oidc.configure
+  ~client_id:(Sys.getenv "TWITCH_CLIENT_ID")
+  ~client_secret:(Sys.getenv "TWITCH_CLIENT_SECRET")
+  ~redirect_uri:(Sys.getenv "TWITCH_OIDC_REDIRECT_URI")
+  "https://id.twitch.tv/oauth2"
 
 (* Now provide functions to signin, signout and query current user (if any) from
    the request.
@@ -91,6 +113,8 @@ let render request =
     <p><a href="<%s Dream_oauth2.Stackoverflow.authorize_url stackoverflow request %>">Sign in with StackOverflow</a></p>
     <p><a href="<%s Dream_oauth2.Twitch.authorize_url twitch request %>">Sign in with Twitch</a></p>
     <p><a href="<%s Dream_oidc.authorize_url google request %>">Sign in with Google</a></p>
+    <p><a href="<%s Dream_oidc.authorize_url twitch_oidc request %>">Sign in with Twitch (OIDC)</a></p>
+    <p><a href="<%s Dream_oidc.authorize_url microsoft request %>">Sign in with Microsoft (OIDC)</a></p>
     <hr>
 % | Some user ->
     <p>Signed in as <%s user %>.<p>
@@ -112,8 +136,6 @@ let render request =
 
   </body>
   </html>
-
-let () = Dream.initialize_log ~level:`Debug ()
 
 (* Now [handle_authenticate_result] is the piece of logic we have to handle the
    final result of the signin flow. *)
@@ -170,6 +192,20 @@ let () =
       let%lwt authenticate_result =
         Dream_oidc.authenticate
           google request
+      in
+      handle_authenticate_result request authenticate_result
+    );
+    Dream.get "/oidc/callback/twitch" (fun request ->
+      let%lwt authenticate_result =
+        Dream_oidc.authenticate
+          twitch_oidc request
+      in
+      handle_authenticate_result request authenticate_result
+    );
+    Dream.get "/oidc/callback/microsoft" (fun request ->
+      let%lwt authenticate_result =
+        Dream_oidc.authenticate
+          microsoft request
       in
       handle_authenticate_result request authenticate_result
     );
