@@ -74,3 +74,7 @@ let user_profile config _request ~access_token =
              email = None;
              provider = "stackoverflow";
            }))
+
+let authenticate config =
+  Oauth2.authenticate ~access_token:(access_token config)
+    ~user_profile:(user_profile config)

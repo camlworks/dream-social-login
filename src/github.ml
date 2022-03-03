@@ -65,3 +65,7 @@ let user_profile _config _req ~access_token =
              email = Some email;
              provider = "github";
            }))
+
+let authenticate config =
+  Oauth2.authenticate ~access_token:(access_token config)
+    ~user_profile:(user_profile config)

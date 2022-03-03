@@ -62,3 +62,7 @@ let user_profile config _request ~access_token =
              email = Some (user |> member "email" |> to_string);
              provider = "twitch";
            }))
+
+let authenticate config =
+  Oauth2.authenticate ~access_token:(access_token config)
+    ~user_profile:(user_profile config)

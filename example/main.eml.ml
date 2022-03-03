@@ -131,26 +131,23 @@ let () =
        [Dream_oauth2.authenticate]. *)
 
     Dream.get "/oauth2/callback/github" (fun request ->
-      let%lwt authenticate_result = Dream_oauth2.authenticate
-        ~access_token:(Dream_oauth2.Github.access_token github)
-        ~user_profile:(Dream_oauth2.Github.user_profile github)
-        request
+      let%lwt authenticate_result =
+        Dream_oauth2.Github.authenticate
+          github request
       in
       handle_authenticate_result request authenticate_result
     );
     Dream.get "/oauth2/callback/stackoverflow" (fun request ->
-      let%lwt authenticate_result = Dream_oauth2.authenticate
-        ~access_token:(Dream_oauth2.Stackoverflow.access_token stackoverflow)
-        ~user_profile:(Dream_oauth2.Stackoverflow.user_profile stackoverflow)
-        request
+      let%lwt authenticate_result =
+        Dream_oauth2.Stackoverflow.authenticate
+          stackoverflow request
       in
       handle_authenticate_result request authenticate_result
     );
     Dream.get "/oauth2/callback/twitch" (fun request ->
-      let%lwt authenticate_result = Dream_oauth2.authenticate
-        ~access_token:(Dream_oauth2.Twitch.access_token twitch)
-        ~user_profile:(Dream_oauth2.Twitch.user_profile twitch)
-        request
+      let%lwt authenticate_result =
+        Dream_oauth2.Twitch.authenticate
+          twitch request
       in
       handle_authenticate_result request authenticate_result
     );

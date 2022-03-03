@@ -8,16 +8,6 @@ module User_profile : sig
   (** Information about an authenticated user. *)
 end
 
-type access_token =
-  Dream.request -> code:string -> (string, string) result Lwt.t
-(** This represents a type of functions which fetch access_token from an OAuth2
-    provider. *)
-
-type user_profile =
-  Dream.request -> access_token:string -> (User_profile.t, string) result Lwt.t
-(** This represents a type of functions which fetch user profile info from an
-    OAuth2 provider. *)
-
 type authenticate_result =
   [ `Ok of User_profile.t
   | `Expired
@@ -31,12 +21,9 @@ type authenticate_result =
       authentication.
   *)
 
-val authenticate :
-  access_token:access_token ->
-  user_profile:user_profile ->
-  Dream.request ->
-  authenticate_result Lwt.t
-(** Authenticate request.
+type authenticate = Dream.request -> authenticate_result Lwt.t
+(** This represents a function which performs the authentication with the OAuth2
+    callback request.
 
     This function should be used in OAuth2 callback, when an OAuth2 provider
     redirects back to your application.
@@ -52,8 +39,7 @@ module Github : sig
   }
 
   val authorize_url : config -> Dream.request -> string
-  val access_token : config -> access_token
-  val user_profile : config -> user_profile
+  val authenticate : config -> authenticate
 end
 
 module Twitch : sig
@@ -64,8 +50,7 @@ module Twitch : sig
   }
 
   val authorize_url : config -> Dream.request -> string
-  val access_token : config -> access_token
-  val user_profile : config -> user_profile
+  val authenticate : config -> authenticate
 end
 
 module Stackoverflow : sig
@@ -77,6 +62,5 @@ module Stackoverflow : sig
   }
 
   val authorize_url : config -> Dream.request -> string
-  val access_token : config -> access_token
-  val user_profile : config -> user_profile
+  val authenticate : config -> authenticate
 end
