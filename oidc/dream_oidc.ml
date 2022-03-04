@@ -69,7 +69,7 @@ let authorize_url config req =
   let query =
     let scope = "openid" :: config.scope in
     Oidc.Parameters.make ~scope config.client ~state:(Dream.csrf_token req)
-      ~redirect_uri:config.redirect_uri
+      ~nonce:(Dream.csrf_token req) ~redirect_uri:config.redirect_uri
     |> Oidc.Parameters.to_query
   in
   config.discovery.Oidc.Discover.authorization_endpoint
@@ -79,31 +79,43 @@ let authorize_url config req =
 type id_token = {
   iss : string;
   sub : string;
+  nonce : string;
 }
 (* TODO: should be probably in oidc (and more complete) *)
 
 (* Extract and validate id_token. *)
 let id_token config token =
-  (* TODO: this is from https://github.com/ulrikstrid/ocaml-oidc/pull/8 *)
   let ( >>= ) = Result.bind in
-  Result.map_error
-    (fun _ -> (* TODO: details *) "invalid token")
-    ( Jose.Jwt.of_string token.Oidc.Token.Response.id_token >>= fun jwt ->
-      if jwt.Jose.Jwt.header.alg = `None then
-        Oidc.IDToken.validate ~client:config.client
-          ~issuer:config.discovery.issuer jwt
-      else
-        match Oidc.Jwks.find_jwk ~jwt config.jwks with
-        | Some jwk ->
-          Oidc.IDToken.validate ~client:config.client
-            ~issuer:config.discovery.issuer ~jwk jwt
-        (* When there is only 1 key in the jwks we can try with that according to
-           the OIDC spec *)
-        | None when List.length config.jwks.keys = 1 ->
-          let jwk = List.hd config.jwks.keys in
-          Oidc.IDToken.validate ~client:config.client
-            ~issuer:config.discovery.issuer ~jwk jwt
-        | None -> Error (`Msg "Could not find JWK") )
+  let fmt_error =
+    Result.map_error (function
+      | `Msg msg -> msg
+      | _err -> (* TODO: details *) "invalid id_token")
+  in
+  Jose.Jwt.of_string token.Oidc.Token.Response.id_token |> fmt_error
+  >>= fun jwt ->
+  (match Yojson.Safe.Util.member "nonce" jwt.payload with
+  | `String nonce -> Ok nonce
+  | _ -> Error "missing `nonce` in id_token")
+  >>= fun nonce ->
+  (* TODO: this is from https://github.com/ulrikstrid/ocaml-oidc/pull/8 *)
+  (if jwt.Jose.Jwt.header.alg = `None then
+     Oidc.IDToken.validate ~nonce ~client:config.client
+       ~issuer:config.discovery.issuer jwt
+     |> fmt_error
+  else
+    match Oidc.Jwks.find_jwk ~jwt config.jwks with
+    | Some jwk ->
+      Oidc.IDToken.validate ~nonce ~client:config.client
+        ~issuer:config.discovery.issuer ~jwk jwt
+      |> fmt_error
+    (* When there is only 1 key in the jwks we can try with that according to
+       the OIDC spec *)
+    | None when List.length config.jwks.keys = 1 ->
+      let jwk = List.hd config.jwks.keys in
+      Oidc.IDToken.validate ~nonce ~client:config.client
+        ~issuer:config.discovery.issuer ~jwk jwt
+      |> fmt_error
+    | None -> Error "could not find JWK")
   >>= fun jwt ->
   Hyper_helper.parse_json jwt.Jose.Jwt.raw_payload ~f:(fun json ->
       let open Yojson.Basic.Util in
@@ -111,6 +123,7 @@ let id_token config token =
         {
           iss = json |> member "iss" |> to_string;
           sub = json |> member "sub" |> to_string;
+          nonce;
         })
 
 (* Fetch and validate tokens (access_token and id_token). *)
@@ -216,6 +229,12 @@ let authenticate config req =
       match%lwt token config ~code with
       | Ok tokens -> Lwt.return tokens
       | Error err -> errorf "error getting access_token: %s" err
+    in
+    let%lwt () =
+      match%lwt Dream.verify_csrf_token req id_token.nonce with
+      | `Ok -> Lwt.return ()
+      | `Expired _ | `Wrong_session -> raise (Return `Expired)
+      | `Invalid -> errorf "invalid `nonce` parameter"
     in
     let%lwt user_profile =
       match%lwt user_profile config ~access_token ~id_token with
