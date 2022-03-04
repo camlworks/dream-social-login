@@ -1,4 +1,14 @@
 module Hyper_helper = Dream_oauth2.Internal.Hyper_helper
+module User_profile = Dream_oauth2.User_profile
+
+type config = {
+  client : Oidc.Client.t;
+  provider_uri : Uri.t;
+  redirect_uri : Uri.t;
+  discovery : Oidc.Discover.t;
+  jwks : Jose.Jwks.t;
+  scope : string list;
+}
 
 let discover provider_uri =
   let open Lwt_result.Infix in
@@ -18,15 +28,8 @@ let jwks discovery =
   let%lwt body = Dream.body resp in
   Lwt.return_ok (Jose.Jwks.of_string body)
 
-type config = {
-  client : Oidc.Client.t;
-  provider_uri : Uri.t;
-  redirect_uri : Uri.t;
-  discovery : Oidc.Discover.t;
-  jwks : Jose.Jwks.t;
-}
-
-let configure ~client_id ~client_secret ~redirect_uri provider_uri =
+let configure ?(scope = []) ~client_id ~client_secret ~redirect_uri provider_uri
+    =
   let redirect_uri = Uri.of_string redirect_uri in
   let provider_uri = Uri.of_string provider_uri in
   let client =
@@ -49,11 +52,12 @@ let configure ~client_id ~client_secret ~redirect_uri provider_uri =
     | Ok jwks -> jwks
     | Error err -> failwith err
   in
-  { client; redirect_uri; provider_uri; discovery; jwks }
+  { client; redirect_uri; provider_uri; discovery; jwks; scope }
 
 let authorize_url config req =
   let query =
-    Oidc.Parameters.make config.client ~state:(Dream.csrf_token req)
+    let scope = "openid" :: config.scope in
+    Oidc.Parameters.make ~scope config.client ~state:(Dream.csrf_token req)
       ~redirect_uri:config.redirect_uri
     |> Oidc.Parameters.to_query
   in

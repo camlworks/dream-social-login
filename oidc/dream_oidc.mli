@@ -1,7 +1,10 @@
+module User_profile = Dream_oauth2.User_profile
+
 type config
 (** Configured OIDC client. *)
 
 val configure :
+  ?scope:string list ->
   client_id:string ->
   client_secret:string ->
   redirect_uri:string ->
