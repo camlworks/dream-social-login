@@ -140,14 +140,14 @@ let token config ~code =
     ~body:(`String body) ~headers
   >>= fun resp ->
   let%lwt body = Dream.body resp in
-  let token =
-    (* TODO: this can fail due to invalid JSON *)
-    Oidc.Token.Response.of_string body
-  in
-  Lwt.return (id_token config token) >>= fun id_token ->
-  match token.Oidc.Token.Response.access_token with
-  | Some access_token -> Lwt.return_ok (access_token, id_token)
-  | None -> Lwt.return_error "missing access_token"
+  match Oidc.Token.Response.of_string body with
+  | exception Yojson.Json_error _ ->
+    Lwt.return_error "error parsing token payload"
+  | token -> (
+    Lwt.return (id_token config token) >>= fun id_token ->
+    match token.Oidc.Token.Response.access_token with
+    | Some access_token -> Lwt.return_ok (access_token, id_token)
+    | None -> Lwt.return_error "missing access_token")
 
 let user_profile config ~access_token ~id_token =
   let open Lwt_result.Infix in
