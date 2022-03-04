@@ -66,10 +66,11 @@ let user_profile _config _req ~access_token =
          let email = json |> member "email" |> to_string in
          Ok
            {
-             Oauth2.User_profile.id = login;
-             display_name = login;
+             Oauth2.User_profile.provider = "github";
+             id = login;
+             name = Some login;
              email = Some email;
-             provider = "github";
+             email_verified = None;
            }))
 
 let authenticate config =

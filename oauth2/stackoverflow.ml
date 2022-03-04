@@ -79,11 +79,11 @@ let user_profile config _request ~access_token =
          let user = json |> member "items" |> index 0 in
          Ok
            {
-             Oauth2.User_profile.id =
-               user |> member "user_id" |> to_int |> Int.to_string;
-             display_name = user |> member "display_name" |> to_string;
+             Oauth2.User_profile.provider = "stackoverflow";
+             id = user |> member "user_id" |> to_int |> Int.to_string;
+             name = user |> member "display_name" |> to_string_option;
              email = None;
-             provider = "stackoverflow";
+             email_verified = None;
            }))
 
 let authenticate config =

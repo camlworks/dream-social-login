@@ -1,9 +1,10 @@
 module User_profile = struct
   type t = {
     id : string;
-    display_name : string;
-    email : string option;
     provider : string;
+    name : string option;
+    email : string option;
+    email_verified : bool option;
   }
 end
 

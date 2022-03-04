@@ -1,9 +1,18 @@
 module User_profile : sig
   type t = {
     id : string;
-    display_name : string;
-    email : string option;
+        (** Unique (to provider) user identifier. This corresponds to "sub"
+            claim in OIDC *)
     provider : string;
+        (** Unique provder identifier. OAuth2 providers have this hardcoded to
+            a specific string token ("github", "twitch", ...) while "iss" claim
+            is used for OIDC providers. *)
+    name : string option;  (** User's name if available. *)
+    email : string option;  (** User's email address if available. *)
+    email_verified : bool option;
+        (** [None] means there's no info about email verification status, [Some
+            verified] means the email verification status is [verified], a
+            [bool] value. *)
   }
   (** Information about an authenticated user. *)
 end

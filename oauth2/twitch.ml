@@ -63,10 +63,11 @@ let user_profile config _request ~access_token =
          let user = json |> member "data" |> index 0 in
          Ok
            {
-             Oauth2.User_profile.id = user |> member "login" |> to_string;
-             display_name = user |> member "display_name" |> to_string;
-             email = Some (user |> member "email" |> to_string);
-             provider = "twitch";
+             Oauth2.User_profile.provider = "twitch";
+             id = user |> member "login" |> to_string;
+             name = user |> member "display_name" |> to_string_option;
+             email = user |> member "email" |> to_string_option;
+             email_verified = None;
            }))
 
 let authenticate config =
