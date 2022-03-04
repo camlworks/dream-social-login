@@ -153,14 +153,11 @@ let user_profile config ~access_token ~id_token =
           if String.equal sub id_token.sub then
             Ok
               {
-                Dream_oauth2.User_profile.id = sub;
+                Dream_oauth2.User_profile.provider = id_token.iss;
+                id = sub;
+                name = member "name" json |> to_string_option;
                 email = member "email" json |> to_string_option;
-                display_name =
-                  (* TODO: make display_name: string option *)
-                  member "name" json
-                  |> to_string_option
-                  |> Option.value ~default:sub;
-                provider = id_token.iss;
+                email_verified = member "email_verified" json |> to_bool_option;
               }
           else
             Error "invalid user_profile")
