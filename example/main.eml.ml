@@ -37,17 +37,17 @@ let twitch = {
   redirect_uri = Sys.getenv "TWITCH_REDIRECT_URI";
 }
 
-let microsoft = Dream_oidc.configure
+let microsoft = Dream_oidc.microsoft
   ~client_id:(Sys.getenv "MS_CLIENT_ID")
   ~client_secret:(Sys.getenv "MS_CLIENT_SECRET")
   ~redirect_uri:(Sys.getenv "MS_REDIRECT_URI")
-  "https://login.microsoftonline.com/consumers/v2.0"
+  ()
 
-let google = Dream_oidc.configure
+let google = Dream_oidc.google
   ~client_id:(Sys.getenv "GOOGLE_CLIENT_ID")
   ~client_secret:(Sys.getenv "GOOGLE_CLIENT_SECRET")
   ~redirect_uri:(Sys.getenv "GOOGLE_REDIRECT_URI")
-  "https://accounts.google.com"
+  ()
 
 (* XXX: See https://github.com/aantron/hyper/issues/5 *)
 (* let gitlab = Dream_oidc.configure *)
@@ -71,10 +71,10 @@ let twitch_oidc = Dream_oidc.configure
    to persist [User_profile.t] information in the database and only store user
    identifier in the session. *)
 
-let signin user_profile request =
+let signin user request =
   let user =
-    user_profile.Dream_oauth2.User_profile.display_name ^
-    " (" ^ user_profile.provider ^ ")"
+    Option.value user.Dream_oidc.User_profile.name ~default:user.id ^
+    " (" ^ user.provider ^ ")"
   in
   Dream.set_session_field request "user" user
 
@@ -137,26 +137,32 @@ let render request =
   </body>
   </html>
 
-(* Now [handle_authenticate_result] is the piece of logic we have to handle the
-   final result of the signin flow. *)
+(* Now we define [authenticate_handler] which creates a new oauth/oidc callback
+   endpoint for the specified [path].
 
-let handle_authenticate_result request result =
-  match result with
-  | `Ok user_profile ->
-    let%lwt () = signin user_profile request in
-    Dream.redirect request "/"
-  | `Error message ->
-    Dream.respond ~status:`Unauthorized message
-  | `Provider_error (error, description) ->
-    let message =
-      Dream_oauth2.provider_error_to_string error ^
-      (description
-      |> Option.map (fun description -> ": " ^ description)
-      |> Option.value ~default:"")
-    in
-    Dream.respond ~status:`Unauthorized message
-  | `Expired ->
-    Dream.redirect request "/"
+   The logic which handles the result of [authenticate request] function call is
+   application specific.
+   *)
+
+let authenticate_handler path authenticate =
+  Dream.get path (fun request ->
+    match%lwt authenticate request with
+    | `Ok user_profile ->
+      let%lwt () = signin user_profile request in
+      Dream.redirect request "/"
+    | `Error message ->
+      Dream.respond ~status:`Unauthorized message
+    | `Provider_error (error, description) ->
+      let message =
+        Dream_oauth2.provider_error_to_string error ^
+        (description
+        |> Option.map (fun description -> ": " ^ description)
+        |> Option.value ~default:"")
+      in
+      Dream.respond ~status:`Unauthorized message
+    | `Expired ->
+      Dream.redirect request "/"
+  )
 
 let () =
   Dream.run ~tls:true ~interface:"10.0.88.2" ~adjust_terminal:false
@@ -164,51 +170,19 @@ let () =
   @@ Dream.memory_sessions
   @@ Dream.router [
 
-    (* Below we install OAuth2 callback handlers which all call into
-       [Dream_oauth2.authenticate]. *)
+    authenticate_handler "/oauth2/callback/github" (
+      Dream_oauth2.Github.authenticate github);
+    authenticate_handler "/oauth2/callback/stackoverflow" (
+      Dream_oauth2.Stackoverflow.authenticate stackoverflow);
+    authenticate_handler "/oauth2/callback/twitch" (
+      Dream_oauth2.Twitch.authenticate twitch);
 
-    Dream.get "/oauth2/callback/github" (fun request ->
-      let%lwt authenticate_result =
-        Dream_oauth2.Github.authenticate
-          github request
-      in
-      handle_authenticate_result request authenticate_result
-    );
-    Dream.get "/oauth2/callback/stackoverflow" (fun request ->
-      let%lwt authenticate_result =
-        Dream_oauth2.Stackoverflow.authenticate
-          stackoverflow request
-      in
-      handle_authenticate_result request authenticate_result
-    );
-    Dream.get "/oauth2/callback/twitch" (fun request ->
-      let%lwt authenticate_result =
-        Dream_oauth2.Twitch.authenticate
-          twitch request
-      in
-      handle_authenticate_result request authenticate_result
-    );
-    Dream.get "/oidc/callback/google" (fun request ->
-      let%lwt authenticate_result =
-        Dream_oidc.authenticate
-          google request
-      in
-      handle_authenticate_result request authenticate_result
-    );
-    Dream.get "/oidc/callback/twitch" (fun request ->
-      let%lwt authenticate_result =
-        Dream_oidc.authenticate
-          twitch_oidc request
-      in
-      handle_authenticate_result request authenticate_result
-    );
-    Dream.get "/oidc/callback/microsoft" (fun request ->
-      let%lwt authenticate_result =
-        Dream_oidc.authenticate
-          microsoft request
-      in
-      handle_authenticate_result request authenticate_result
-    );
+    authenticate_handler "/oidc/callback/google" (
+      Dream_oidc.authenticate google);
+    authenticate_handler "/oidc/callback/twitch" (
+      Dream_oidc.authenticate twitch_oidc);
+    authenticate_handler "/oidc/callback/microsoft" (
+      Dream_oidc.authenticate microsoft);
 
     Dream.get "/" (fun request ->
       Dream.html (render request));

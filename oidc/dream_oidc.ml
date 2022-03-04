@@ -54,6 +54,17 @@ let configure ?(scope = []) ~client_id ~client_secret ~redirect_uri provider_uri
   in
   { client; redirect_uri; provider_uri; discovery; jwks; scope }
 
+let google ?(scope = []) ~client_id ~client_secret ~redirect_uri () =
+  configure
+    ~scope:("profile" :: "email" :: scope)
+    ~client_id ~client_secret ~redirect_uri "https://accounts.google.com"
+
+let microsoft ?(scope = []) ~client_id ~client_secret ~redirect_uri () =
+  configure
+    ~scope:("profile" :: "email" :: scope)
+    ~client_id ~client_secret ~redirect_uri
+    "https://login.microsoftonline.com/consumers/v2.0"
+
 let authorize_url config req =
   let query =
     let scope = "openid" :: config.scope in
