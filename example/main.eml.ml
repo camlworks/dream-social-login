@@ -193,7 +193,7 @@ let () =
         )
         [google; microsoft; twitch_oidc]
   in
-  Dream.run ~tls:true ~interface:"10.0.88.2" ~adjust_terminal:false
+  Dream.run ~tls:true
   @@ Dream.logger
   @@ Dream.memory_sessions
   @@ Dream.router [
