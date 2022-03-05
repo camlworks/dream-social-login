@@ -40,5 +40,5 @@ pin-depends: [
   ["dream-httpaf.1.0.0~alpha4" "git+https://github.com/aantron/dream.git#dcc3513"]
   ["dream-pure.1.0.0~alpha4" "git+https://github.com/aantron/dream.git#dcc3513"]
   ["dream-encoding.dev" "git+https://github.com/andreypopp/dream-encoding.git#9e8b8ee"]
-  ["oidc.dev" "git+https://github.com/andreypopp/ocaml-oidc.git#da4fe6"]
+  ["oidc.dev" "git+https://github.com/ulrikstrid/ocaml-oidc.git#6af260"]
 ]
