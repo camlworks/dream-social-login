@@ -66,28 +66,6 @@ let configure oidc =
       | Some _ -> Lwt.return_ok { discovery; jwks } );
   oidc.config >|= fun _ -> ()
 
-let google ?user_claims ?(scope = []) ~client_id ~client_secret ~redirect_uri ()
-    =
-  make ?user_claims
-    ~scope:("profile" :: "email" :: scope)
-    ~client_id ~client_secret ~redirect_uri "https://accounts.google.com"
-
-let microsoft ?user_claims ?(scope = []) ~client_id ~client_secret ~redirect_uri
-    () =
-  make ?user_claims
-    ~scope:("profile" :: "email" :: scope)
-    ~client_id ~client_secret ~redirect_uri
-    "https://login.microsoftonline.com/consumers/v2.0"
-
-let twitch ?(user_claims = []) ?(scope = []) ~client_id ~client_secret
-    ~redirect_uri () =
-  let user_claims =
-    "email" :: "email_verified" :: "preferred_username" :: user_claims
-  in
-  make ~user_claims
-    ~scope:("user:read:email" :: scope)
-    ~client_id ~client_secret ~redirect_uri "https://id.twitch.tv/oauth2"
-
 let authorize_url oidc req =
   let query =
     let scope = "openid" :: oidc.scope in
@@ -113,43 +91,43 @@ let authorize_url oidc req =
         |> Uri.with_uri ~query:(Some query)
         |> Uri.to_string))
 
-type id_token = {
-  iss : string;
-  sub : string;
-  nonce : string;
-}
+module Id_token = struct
+  type id_token = {
+    iss : string;
+    sub : string;
+    nonce : string;
+  }
 
-(* Extract and validate id_token. *)
-let id_token ~discovery ~jwks ~client token =
-  let ( >>= ) = Result.bind in
-  Jose.Jwt.of_string token.Oidc.Token.Response.id_token
-  >>= (fun jwt ->
-        (* We always use `nonce` (as CSRF tag) but we don't store it
-           anywhere, we only check that the the `nonce` in token belongs to the
-           current session (see authenticate function).
+  let of_token_response ~discovery ~jwks ~client token =
+    let ( >>= ) = Result.bind in
+    Jose.Jwt.of_string token.Oidc.Token.Response.id_token
+    >>= (fun jwt ->
+          (* We always use `nonce` (as CSRF tag) but we don't store it
+             anywhere, we only check that the the `nonce` in token belongs to the
+             current session (see authenticate function).
 
-           So here we extract the `nonce` from jwt and pass it to validation so
-           validation doesn't fail. *)
-        (match Yojson.Safe.Util.member "nonce" jwt.payload with
-        | `String nonce -> Ok nonce
-        | _ -> Error `Missing_nonce)
-        >>= fun nonce ->
-        Oidc.Token.Response.validate ~nonce ~jwks ~client ~discovery token
-        >>= fun _ -> Ok (jwt, nonce))
-  |> Result.map_error (fun err ->
-         "error validating id_token: "
-         ^ Oidc.IDToken.validation_error_to_string err)
-  >>= fun (jwt, nonce) ->
-  Hyper_helper.parse_json jwt.Jose.Jwt.raw_payload ~f:(fun json ->
-      let open Yojson.Basic.Util in
-      Ok
-        {
-          iss = json |> member "iss" |> to_string;
-          sub = json |> member "sub" |> to_string;
-          nonce;
-        })
+             So here we extract the `nonce` from jwt and pass it to validation so
+             validation doesn't fail. *)
+          (match Yojson.Safe.Util.member "nonce" jwt.payload with
+          | `String nonce -> Ok nonce
+          | _ -> Error `Missing_nonce)
+          >>= fun nonce ->
+          Oidc.Token.Response.validate ~nonce ~jwks ~client ~discovery token
+          >>= fun _ -> Ok (jwt, nonce))
+    |> Result.map_error (fun err ->
+           "error validating id_token: "
+           ^ Oidc.IDToken.validation_error_to_string err)
+    >>= fun (jwt, nonce) ->
+    Hyper_helper.parse_json jwt.Jose.Jwt.raw_payload ~f:(fun json ->
+        let open Yojson.Basic.Util in
+        Ok
+          {
+            iss = json |> member "iss" |> to_string;
+            sub = json |> member "sub" |> to_string;
+            nonce;
+          })
+end
 
-(* Fetch and validate tokens (access_token and id_token). *)
 let token oidc ~code =
   let open Lwt_result.Infix in
   let body =
@@ -181,7 +159,7 @@ let token oidc ~code =
     Lwt.return_error "error parsing token payload"
   | token -> (
     Lwt.return
-      (id_token ~client:oidc.client ~jwks:config'.jwks
+      (Id_token.of_token_response ~client:oidc.client ~jwks:config'.jwks
          ~discovery:config'.discovery token)
     >>= fun id_token ->
     match token.Oidc.Token.Response.access_token with
@@ -205,7 +183,7 @@ let user_profile oidc ~access_token ~id_token =
   >>= Hyper_helper.parse_json_body ~f:(fun json ->
           let open Yojson.Basic.Util in
           let sub = member "sub" json |> to_string in
-          if String.equal sub id_token.sub then
+          if String.equal sub id_token.Id_token.sub then
             let name =
               match member "name" json with
               | `Null -> member "preferred_username" json |> to_string_option
@@ -224,6 +202,10 @@ let user_profile oidc ~access_token ~id_token =
             Error "invalid user_profile")
 
 type authenticate_result = Dream_oauth2.authenticate_result
+and provider_error = Dream_oauth2.provider_error
+
+let provider_error_of_string = Dream_oauth2.provider_error_of_string
+let provider_error_to_string = Dream_oauth2.provider_error_to_string
 
 let authenticate oidc req =
   let exception Return of authenticate_result in
@@ -276,3 +258,25 @@ let authenticate oidc req =
     in
     Lwt.return (`Ok user_profile)
   with Return result -> Lwt.return result
+
+let google ?user_claims ?(scope = []) ~client_id ~client_secret ~redirect_uri ()
+    =
+  make ?user_claims
+    ~scope:("profile" :: "email" :: scope)
+    ~client_id ~client_secret ~redirect_uri "https://accounts.google.com"
+
+let microsoft ?user_claims ?(scope = []) ~client_id ~client_secret ~redirect_uri
+    () =
+  make ?user_claims
+    ~scope:("profile" :: "email" :: scope)
+    ~client_id ~client_secret ~redirect_uri
+    "https://login.microsoftonline.com/consumers/v2.0"
+
+let twitch ?(user_claims = []) ?(scope = []) ~client_id ~client_secret
+    ~redirect_uri () =
+  let user_claims =
+    "email" :: "email_verified" :: "preferred_username" :: user_claims
+  in
+  make ~user_claims
+    ~scope:("user:read:email" :: scope)
+    ~client_id ~client_secret ~redirect_uri "https://id.twitch.tv/oauth2"

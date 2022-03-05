@@ -48,6 +48,20 @@ val configure : oidc -> (unit, string) Lwt_result.t
 val provider_uri : oidc -> string
 (** Get OIDC client provider URI. *)
 
+val authorize_url : oidc -> Dream.request -> (string, string) Lwt_result.t
+(** Produce an URL to start signin flow with an OIDC provider. *)
+
+type authenticate_result = Dream_oauth2.authenticate_result
+and provider_error = Dream_oauth2.provider_error
+
+val provider_error_to_string : provider_error -> string
+val provider_error_of_string : string -> provider_error option
+
+val authenticate :
+  oidc -> Dream.request -> Dream_oauth2.authenticate_result Lwt.t
+(** Get the result of authentication. This should be called inside the OAuth2
+    callback handler.*)
+
 val google :
   ?user_claims:string list ->
   ?scope:string list ->
@@ -95,11 +109,3 @@ val twitch :
   See https://dev.twitch.tv/docs/authentication/#registration for acquiring
   [client_id], [client_secret] values.
   *)
-
-val authorize_url : oidc -> Dream.request -> (string, string) Lwt_result.t
-(** Produce an URL to start signin flow with GitHub. *)
-
-val authenticate :
-  oidc -> Dream.request -> Dream_oauth2.authenticate_result Lwt.t
-(** Get the result of authentication. This should be called inside the OAuth2
-    callback handler.*)
