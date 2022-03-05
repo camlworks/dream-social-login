@@ -1,11 +1,14 @@
 let log = Dream.sub_log "dream-oauth2-stackoverflow"
 
-type config = {
+type oauth2 = {
   client_id : string;
   client_secret : string;
   redirect_uri : string;
   key : string;
 }
+
+let make ~client_id ~client_secret ~redirect_uri ~key () =
+  { client_id; client_secret; redirect_uri; key }
 
 let authorize_endpoint = Uri.of_string "https://stackoverflow.com/oauth"
 
@@ -14,29 +17,29 @@ let token_endpoint =
 
 let userinfo_endpoint = Uri.of_string "https://api.stackexchange.com/2.3/me"
 
-let authorize_url config req =
+let authorize_url oauth2 req =
   authorize_endpoint
   |> Uri.with_uri
        ~query:
          (Some
             [
-              ("client_id", [config.client_id]);
-              ("redirect_uri", [config.redirect_uri]);
+              ("client_id", [oauth2.client_id]);
+              ("redirect_uri", [oauth2.redirect_uri]);
               ("state", [Dream.csrf_token req]);
             ])
   |> Uri.to_string
 
-let access_token config _request ~code =
+let access_token oauth2 _request ~code =
   log.debug (fun log -> log "getting access_token");
   let%lwt resp =
     Hyper_helper.post token_endpoint
       ~body:
         (`Form
           [
-            ("client_id", config.client_id);
-            ("client_secret", config.client_secret);
+            ("client_id", oauth2.client_id);
+            ("client_secret", oauth2.client_secret);
             ("code", code);
-            ("redirect_uri", config.redirect_uri);
+            ("redirect_uri", oauth2.redirect_uri);
           ])
       ~headers:[("Accept", "*/*")]
   in
@@ -57,7 +60,7 @@ let access_token config _request ~code =
         Error "no `access_token` in the response")
   | Error err -> Lwt.return_error err
 
-let user_profile config _request ~access_token =
+let user_profile oauth2 _request ~access_token =
   log.debug (fun log -> log "getting user_profile");
   Lwt_result.bind
     (Hyper_helper.get
@@ -66,7 +69,7 @@ let user_profile config _request ~access_token =
             (Some
                [
                  ("access_token", [access_token]);
-                 ("key", [config.key]);
+                 ("key", [oauth2.key]);
                  ("site", ["stackoverflow"]);
                ]))
        ~headers:
@@ -87,6 +90,6 @@ let user_profile config _request ~access_token =
              json;
            }))
 
-let authenticate config =
-  Oauth2.authenticate ~access_token:(access_token config)
-    ~user_profile:(user_profile config)
+let authenticate oauth2 =
+  Oauth2.authenticate ~access_token:(access_token oauth2)
+    ~user_profile:(user_profile oauth2)

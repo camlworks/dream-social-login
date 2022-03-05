@@ -15,27 +15,27 @@ let messages = ref [
 
 let () = Dream.initialize_log ~level:`Debug ()
 
-let github = {
-  Dream_oauth2.Github.
-  client_id = Sys.getenv "GH_CLIENT_ID";
-  client_secret = Sys.getenv "GH_CLIENT_SECRET";
-  redirect_uri = Sys.getenv "GH_REDIRECT_URI";
-}
+let github =
+  Dream_oauth2.Github.make
+    ~client_id:(Sys.getenv "GH_CLIENT_ID")
+    ~client_secret:(Sys.getenv "GH_CLIENT_SECRET")
+    ~redirect_uri:(Sys.getenv "GH_REDIRECT_URI")
+    ()
 
-let stackoverflow = {
-  Dream_oauth2.Stackoverflow.
-  client_id = Sys.getenv "SO_CLIENT_ID";
-  client_secret = Sys.getenv "SO_CLIENT_SECRET";
-  key = Sys.getenv "SO_KEY";
-  redirect_uri = Sys.getenv "SO_REDIRECT_URI";
-}
+let stackoverflow =
+  Dream_oauth2.Stackoverflow.make
+    ~client_id:(Sys.getenv "SO_CLIENT_ID")
+    ~client_secret:(Sys.getenv "SO_CLIENT_SECRET")
+    ~redirect_uri:(Sys.getenv "SO_REDIRECT_URI")
+    ~key:(Sys.getenv "SO_KEY")
+    ()
 
-let twitch = {
-  Dream_oauth2.Twitch.
-  client_id = Sys.getenv "TWITCH_CLIENT_ID";
-  client_secret = Sys.getenv "TWITCH_CLIENT_SECRET";
-  redirect_uri = Sys.getenv "TWITCH_REDIRECT_URI";
-}
+let twitch =
+  Dream_oauth2.Twitch.make
+    ~client_id:(Sys.getenv "TWITCH_CLIENT_ID")
+    ~client_secret:(Sys.getenv "TWITCH_CLIENT_SECRET")
+    ~redirect_uri:(Sys.getenv "TWITCH_REDIRECT_URI")
+    ()
 
 let google = Dream_oidc.google
   ~client_id:(Sys.getenv "GOOGLE_CLIENT_ID")

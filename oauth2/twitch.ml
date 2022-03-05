@@ -1,41 +1,44 @@
 let log = Dream.sub_log "dream-oauth2-twitch"
 
-type config = {
+type oauth2 = {
   client_id : string;
   client_secret : string;
   redirect_uri : string;
 }
 
+let make ~client_id ~client_secret ~redirect_uri () =
+  { client_id; client_secret; redirect_uri }
+
 let authorize_endpoint = Uri.of_string "https://id.twitch.tv/oauth2/authorize"
 let token_endpoint = Uri.of_string "https://id.twitch.tv/oauth2/token"
 let userinfo_endpoint = Uri.of_string "https://api.twitch.tv/helix/users"
 
-let authorize_url config request =
+let authorize_url oauth2 request =
   authorize_endpoint
   |> Uri.with_uri
        ~query:
          (Some
             [
-              ("client_id", [config.client_id]);
-              ("redirect_uri", [config.redirect_uri]);
+              ("client_id", [oauth2.client_id]);
+              ("redirect_uri", [oauth2.redirect_uri]);
               ("state", [Dream.csrf_token request]);
               ("scope", ["user:read:email"]);
               ("response_type", ["code"]);
             ])
   |> Uri.to_string
 
-let access_token config _request ~code =
+let access_token oauth2 _request ~code =
   log.debug (fun log -> log "getting access_token");
   let%lwt resp =
     Hyper_helper.post token_endpoint
       ~body:
         (`Form
           [
-            ("client_id", config.client_id);
-            ("client_secret", config.client_secret);
+            ("client_id", oauth2.client_id);
+            ("client_secret", oauth2.client_secret);
             ("code", code);
             ("grant_type", "authorization_code");
-            ("redirect_uri", config.redirect_uri);
+            ("redirect_uri", oauth2.redirect_uri);
           ])
       ~headers:[("Accept", "application/json")]
   in
@@ -48,14 +51,14 @@ let access_token config _request ~code =
         Ok access_token)
   | Error err -> Lwt.return_error err
 
-let user_profile config _request ~access_token =
+let user_profile oauth2 _request ~access_token =
   log.debug (fun log -> log "getting user_profile");
   Lwt_result.bind
     (Hyper_helper.get userinfo_endpoint
        ~headers:
          [
            ("Authorization", "Bearer " ^ access_token);
-           ("Client-id", config.client_id);
+           ("Client-id", oauth2.client_id);
            ("Accept", "application/json");
          ])
     (Hyper_helper.parse_json_body ~f:(fun json ->
@@ -71,6 +74,6 @@ let user_profile config _request ~access_token =
              json;
            }))
 
-let authenticate config =
-  Oauth2.authenticate ~access_token:(access_token config)
-    ~user_profile:(user_profile config)
+let authenticate oauth2 =
+  Oauth2.authenticate ~access_token:(access_token oauth2)
+    ~user_profile:(user_profile oauth2)
