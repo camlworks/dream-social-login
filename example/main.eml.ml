@@ -50,7 +50,7 @@ let microsoft = Dream_oidc.microsoft
   ()
 
 (* XXX: See https://github.com/aantron/hyper/issues/5 *)
-(* let gitlab = Dream_oidc.configure *)
+(* let gitlab = Dream_oidc.make *)
 (*   ~client_id:(Sys.getenv "GITLAB_CLIENT_ID") *)
 (*   ~client_secret:(Sys.getenv "GITLAB_CLIENT_SECRET") *)
 (*   ~redirect_uri:(Sys.getenv "GITLAB_REDIRECT_URI") *)
@@ -91,7 +91,20 @@ let user request =
    links to start the sign in flow with each of the OAuth2 providers we have
    configured. *)
 
+let oidc_authorize_url oidc name request =
+  match%lwt Dream_oidc.authorize_url oidc request with
+  | Ok url ->
+    Lwt.return @@
+      <a href="<%s url %>">Sign in with <%s name %></a>
+  | Error _ ->
+    Lwt.return @@
+      <span>"Sign in with <%s name %>" is not available</span>
+
 let render request =
+  let%lwt google_url = oidc_authorize_url google "Google" request in
+  let%lwt microsoft_url = oidc_authorize_url microsoft "Microsoft" request in
+  let%lwt twitch_oidc_url = oidc_authorize_url twitch_oidc "Twitch (OIDC)" request in
+  Lwt.return @@
   <html>
   <head>
   <style>
@@ -111,9 +124,9 @@ let render request =
     <p><a href="<%s Dream_oauth2.Github.authorize_url github request %>">Sign in with GitHub</a></p>
     <p><a href="<%s Dream_oauth2.Stackoverflow.authorize_url stackoverflow request %>">Sign in with StackOverflow</a></p>
     <p><a href="<%s Dream_oauth2.Twitch.authorize_url twitch request %>">Sign in with Twitch</a></p>
-    <p><a href="<%s Dream_oidc.authorize_url google request %>">Sign in with Google</a></p>
-    <p><a href="<%s Dream_oidc.authorize_url twitch_oidc request %>">Sign in with Twitch (OIDC)</a></p>
-    <p><a href="<%s Dream_oidc.authorize_url microsoft request %>">Sign in with Microsoft</a></p>
+    <p><%s! google_url %></p>
+    <p><%s! microsoft_url %></p>
+    <p><%s! twitch_oidc_url %></p>
     <hr>
 % | Some user ->
     <p>Signed in as <%s user %>.<p>
@@ -164,6 +177,22 @@ let authenticate_handler path authenticate =
   )
 
 let () =
+  let () =
+    (* Configure OIDC providers at startup. *)
+    Lwt_main.run @@
+      Lwt_list.iter_p
+        (fun oidc ->
+          match%lwt Dream_oidc.configure oidc with
+          | Ok () -> Lwt.return ()
+          | Error err ->
+            let provider_uri = Dream_oidc.provider_uri oidc in
+            Printf.eprintf
+              "error configuring OIDC client for %s: %s"
+              provider_uri err;
+            Lwt.return ()
+        )
+        [google; microsoft; twitch_oidc]
+  in
   Dream.run ~tls:true ~interface:"10.0.88.2" ~adjust_terminal:false
   @@ Dream.logger
   @@ Dream.memory_sessions
@@ -184,7 +213,8 @@ let () =
       Dream_oidc.authenticate microsoft);
 
     Dream.get "/" (fun request ->
-      Dream.html (render request));
+      let%lwt page = render request in
+      Dream.html page);
 
     Dream.post "/" (fun request ->
       match user request with

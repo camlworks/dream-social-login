@@ -1,23 +1,23 @@
 module User_profile = Dream_oauth2.User_profile
 
-type config
-(** Configured OIDC client. *)
+type oidc
+(** OIDC client. *)
 
-val configure :
+val make :
   ?user_claims:string list ->
   ?scope:string list ->
   client_id:string ->
   client_secret:string ->
   redirect_uri:string ->
   string ->
-  config
-(** Configure an OIDC client using OpenID Connect Discovery mechanism.
+  oidc
+(** Create an OIDC client which uses OpenID Connect Discovery mechanism to
+    configure itself.
 
-    See https://openid.net/specs/openid-connect-discovery-1_0.html
-
-    [configure ~client_id ~client_secret ~redirect_uri provider_uri] makes a
-    request to [provider_uri]/.well-known/openid-configuration URL to get JSON
-    encoded information about an OIDC provider endpoints and supported features.
+    Note that this function doesn't do any configuration itsef, you need to
+    call [configure] on its result to perform an actual configuration which
+    involves making HTTP requests to an OIDC provider. Before [configure]
+    function call is made the client is in unusable state.
 
     Parameters [client_id], [client_secret] should be obtained from OIDC
     provider by registering a client (usually called "application") with it.
@@ -30,9 +30,23 @@ val configure :
     Optional parameter [scope] specifies what access privileges are requested
     from a user. Note that `"openid"` scope is always requested (as specified by
     OIDC protocol). Other possible values are `"profile"`, `"email"` (see the
-    lsit at https://openid.net/specs/openid-connect-basic-1_0.html#Scopes).
+    list at https://openid.net/specs/openid-connect-basic-1_0.html#Scopes).
+
+    Optional parameter [user_claims] specifies what claims should be fetched
+    from userinfo endpoint (see the list of standard OIDC claims here
+    https://openid.net/specs/openid-connect-core-1_0.html#StandardClaims).
 
  *)
+
+val configure : oidc -> (unit, string) Lwt_result.t
+(** Configure an OIDC client using OpenID Connect Discovery mechanism.
+
+    See https://openid.net/specs/openid-connect-discovery-1_0.html for more
+    information.
+  *)
+
+val provider_uri : oidc -> string
+(** Get OIDC client provider URI. *)
 
 val google :
   ?user_claims:string list ->
@@ -41,7 +55,7 @@ val google :
   client_secret:string ->
   redirect_uri:string ->
   unit ->
-  config
+  oidc
 (**
 
   Pre-configured Google OIDC client.
@@ -57,7 +71,7 @@ val microsoft :
   client_secret:string ->
   redirect_uri:string ->
   unit ->
-  config
+  oidc
 (**
 
   Pre-configured Microsoft OIDC client.
@@ -73,7 +87,7 @@ val twitch :
   client_secret:string ->
   redirect_uri:string ->
   unit ->
-  config
+  oidc
 (**
 
   Pre-configured Twitch OIDC client.
@@ -82,10 +96,10 @@ val twitch :
   [client_id], [client_secret] values.
   *)
 
-val authorize_url : config -> Dream.request -> string
+val authorize_url : oidc -> Dream.request -> (string, string) Lwt_result.t
 (** Produce an URL to start signin flow with GitHub. *)
 
 val authenticate :
-  config -> Dream.request -> Dream_oauth2.authenticate_result Lwt.t
+  oidc -> Dream.request -> Dream_oauth2.authenticate_result Lwt.t
 (** Get the result of authentication. This should be called inside the OAuth2
     callback handler.*)

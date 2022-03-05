@@ -1,15 +1,21 @@
 module Hyper_helper = Dream_oauth2.Internal.Hyper_helper
 module User_profile = Dream_oauth2.User_profile
 
-type config = {
+type oidc = {
   client : Oidc.Client.t;
   provider_uri : Uri.t;
   redirect_uri : Uri.t;
-  discovery : Oidc.Discover.t;
-  jwks : Jose.Jwks.t;
   scope : string list;
   user_claims : string list;
+  mutable config : (config, string) Lwt_result.t;
 }
+
+and config = {
+  discovery : Oidc.Discover.t;
+  jwks : Jose.Jwks.t;
+}
+
+let provider_uri oidc = Uri.to_string oidc.provider_uri
 
 let discover provider_uri =
   let open Lwt_result.Infix in
@@ -29,7 +35,7 @@ let jwks discovery =
   let%lwt body = Dream.body resp in
   Lwt.return_ok (Jose.Jwks.of_string body)
 
-let configure ?(user_claims = []) ?(scope = []) ~client_id ~client_secret
+let make ?(user_claims = []) ?(scope = []) ~client_id ~client_secret
     ~redirect_uri provider_uri =
   let redirect_uri = Uri.of_string redirect_uri in
   let provider_uri = Uri.of_string provider_uri in
@@ -38,32 +44,37 @@ let configure ?(user_claims = []) ?(scope = []) ~client_id ~client_secret
       ~grant_types:[] ~redirect_uris:[redirect_uri]
       ~token_endpoint_auth_method:"client_secret_post" client_id
   in
-  let discovery =
-    match Lwt_main.run (discover provider_uri) with
-    | Ok discovery -> discovery
-    | Error err -> failwith err
-  in
-  let () =
-    match discovery.Oidc.Discover.userinfo_endpoint with
-    | None -> failwith "missing userinfo_endpoint"
-    | Some _ -> ()
-  in
-  let jwks =
-    match Lwt_main.run (jwks discovery) with
-    | Ok jwks -> jwks
-    | Error err -> failwith err
-  in
-  { client; redirect_uri; provider_uri; discovery; jwks; scope; user_claims }
+  {
+    client;
+    redirect_uri;
+    provider_uri;
+    scope;
+    user_claims;
+    config =
+      (* Put error here so we'll fail if user didn't call [configure]. *)
+      Lwt.return_error
+        "OIDC client is not configured: forgot to call configure?";
+  }
+
+let configure oidc =
+  let open Lwt_result.Infix in
+  oidc.config <-
+    ( discover oidc.provider_uri >>= fun discovery ->
+      jwks discovery >>= fun jwks ->
+      match discovery.Oidc.Discover.userinfo_endpoint with
+      | None -> Lwt.return_error "OIDC discovery is missing userinfo_endpoint"
+      | Some _ -> Lwt.return_ok { discovery; jwks } );
+  oidc.config >|= fun _ -> ()
 
 let google ?user_claims ?(scope = []) ~client_id ~client_secret ~redirect_uri ()
     =
-  configure ?user_claims
+  make ?user_claims
     ~scope:("profile" :: "email" :: scope)
     ~client_id ~client_secret ~redirect_uri "https://accounts.google.com"
 
 let microsoft ?user_claims ?(scope = []) ~client_id ~client_secret ~redirect_uri
     () =
-  configure ?user_claims
+  make ?user_claims
     ~scope:("profile" :: "email" :: scope)
     ~client_id ~client_secret ~redirect_uri
     "https://login.microsoftonline.com/consumers/v2.0"
@@ -73,15 +84,15 @@ let twitch ?(user_claims = []) ?(scope = []) ~client_id ~client_secret
   let user_claims =
     "email" :: "email_verified" :: "preferred_username" :: user_claims
   in
-  configure ~user_claims
+  make ~user_claims
     ~scope:("user:read:email" :: scope)
     ~client_id ~client_secret ~redirect_uri "https://id.twitch.tv/oauth2"
 
-let authorize_url config req =
+let authorize_url oidc req =
   let query =
-    let scope = "openid" :: config.scope in
+    let scope = "openid" :: oidc.scope in
     let claims =
-      match config.user_claims with
+      match oidc.user_claims with
       | [] -> None
       | user_claims ->
         Some
@@ -91,14 +102,16 @@ let authorize_url config req =
                 `Assoc (List.map (fun claim -> (claim, `Null)) user_claims) );
             ])
     in
-    Oidc.Parameters.make ?claims ~scope config.client
+    Oidc.Parameters.make ?claims ~scope oidc.client
       ~state:(Dream.csrf_token req) ~nonce:(Dream.csrf_token req)
-      ~redirect_uri:config.redirect_uri
+      ~redirect_uri:oidc.redirect_uri
     |> Oidc.Parameters.to_query
   in
-  config.discovery.Oidc.Discover.authorization_endpoint
-  |> Uri.with_uri ~query:(Some query)
-  |> Uri.to_string
+  Lwt_result.bind oidc.config (fun config' ->
+      Lwt.return_ok
+        (config'.discovery.Oidc.Discover.authorization_endpoint
+        |> Uri.with_uri ~query:(Some query)
+        |> Uri.to_string))
 
 type id_token = {
   iss : string;
@@ -107,7 +120,7 @@ type id_token = {
 }
 
 (* Extract and validate id_token. *)
-let id_token config token =
+let id_token ~discovery ~jwks ~client token =
   let ( >>= ) = Result.bind in
   Jose.Jwt.of_string token.Oidc.Token.Response.id_token
   >>= (fun jwt ->
@@ -121,8 +134,7 @@ let id_token config token =
         | `String nonce -> Ok nonce
         | _ -> Error `Missing_nonce)
         >>= fun nonce ->
-        Oidc.Token.Response.validate ~nonce ~jwks:config.jwks
-          ~client:config.client ~discovery:config.discovery token
+        Oidc.Token.Response.validate ~nonce ~jwks ~client ~discovery token
         >>= fun _ -> Ok (jwt, nonce))
   |> Result.map_error (fun err ->
          "error validating id_token: "
@@ -138,12 +150,11 @@ let id_token config token =
         })
 
 (* Fetch and validate tokens (access_token and id_token). *)
-let token config ~code =
+let token oidc ~code =
   let open Lwt_result.Infix in
   let body =
-    Oidc.Token.Request.make ~client:config.client
-      ~grant_type:"authorization_code" ~scope:["openid"]
-      ~redirect_uri:config.redirect_uri ~code
+    Oidc.Token.Request.make ~client:oidc.client ~grant_type:"authorization_code"
+      ~scope:["openid"] ~redirect_uri:oidc.redirect_uri ~code
     |> Oidc.Token.Request.to_body_string
   in
   let headers =
@@ -153,14 +164,15 @@ let token config ~code =
     ]
   in
   let headers =
-    match config.client.token_endpoint_auth_method with
+    match oidc.client.token_endpoint_auth_method with
     | "client_secret_basic" ->
-      Oidc.Token.basic_auth ~client_id:config.client.id
-        ~secret:(Option.value ~default:"" config.client.secret)
+      Oidc.Token.basic_auth ~client_id:oidc.client.id
+        ~secret:(Option.value ~default:"" oidc.client.secret)
       :: headers
     | _ -> headers
   in
-  Hyper_helper.post config.discovery.Oidc.Discover.token_endpoint
+  oidc.config >>= fun config' ->
+  Hyper_helper.post config'.discovery.Oidc.Discover.token_endpoint
     ~body:(`String body) ~headers
   >>= fun resp ->
   let%lwt body = Dream.body resp in
@@ -168,15 +180,19 @@ let token config ~code =
   | exception Yojson.Json_error _ ->
     Lwt.return_error "error parsing token payload"
   | token -> (
-    Lwt.return (id_token config token) >>= fun id_token ->
+    Lwt.return
+      (id_token ~client:oidc.client ~jwks:config'.jwks
+         ~discovery:config'.discovery token)
+    >>= fun id_token ->
     match token.Oidc.Token.Response.access_token with
     | Some access_token -> Lwt.return_ok (access_token, id_token)
     | None -> Lwt.return_error "missing access_token")
 
-let user_profile config ~access_token ~id_token =
+let user_profile oidc ~access_token ~id_token =
   let open Lwt_result.Infix in
+  oidc.config >>= fun config' ->
   let userinfo_endpoint =
-    match config.discovery.userinfo_endpoint with
+    match config'.discovery.userinfo_endpoint with
     | None -> assert false (* checked in configure *)
     | Some userinfo_endpoint -> userinfo_endpoint
   in
@@ -209,7 +225,7 @@ let user_profile config ~access_token ~id_token =
 
 type authenticate_result = Dream_oauth2.authenticate_result
 
-let authenticate config req =
+let authenticate oidc req =
   let exception Return of authenticate_result in
   let errorf fmt =
     let kerr message = raise (Return (`Error message)) in
@@ -243,7 +259,7 @@ let authenticate config req =
       | None -> errorf "no `code` parameter in callback request"
     in
     let%lwt access_token, id_token =
-      match%lwt token config ~code with
+      match%lwt token oidc ~code with
       | Ok tokens -> Lwt.return tokens
       | Error err -> errorf "error getting access_token: %s" err
     in
@@ -254,7 +270,7 @@ let authenticate config req =
       | `Invalid -> errorf "invalid `nonce` parameter"
     in
     let%lwt user_profile =
-      match%lwt user_profile config ~access_token ~id_token with
+      match%lwt user_profile oidc ~access_token ~id_token with
       | Ok user_profile -> Lwt.return user_profile
       | Error err -> errorf "error getting user_profile: %s" err
     in
