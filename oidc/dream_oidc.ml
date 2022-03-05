@@ -81,42 +81,29 @@ type id_token = {
   sub : string;
   nonce : string;
 }
-(* TODO: should be probably in oidc (and more complete) *)
 
 (* Extract and validate id_token. *)
 let id_token config token =
   let ( >>= ) = Result.bind in
-  let fmt_error =
-    Result.map_error (function
-      | `Msg msg -> msg
-      | _err -> (* TODO: details *) "invalid id_token")
-  in
-  Jose.Jwt.of_string token.Oidc.Token.Response.id_token |> fmt_error
-  >>= fun jwt ->
-  (match Yojson.Safe.Util.member "nonce" jwt.payload with
-  | `String nonce -> Ok nonce
-  | _ -> Error "missing `nonce` in id_token")
-  >>= fun nonce ->
-  (* TODO: this is from https://github.com/ulrikstrid/ocaml-oidc/pull/8 *)
-  (if jwt.Jose.Jwt.header.alg = `None then
-     Oidc.IDToken.validate ~nonce ~client:config.client
-       ~issuer:config.discovery.issuer jwt
-     |> fmt_error
-  else
-    match Oidc.Jwks.find_jwk ~jwt config.jwks with
-    | Some jwk ->
-      Oidc.IDToken.validate ~nonce ~client:config.client
-        ~issuer:config.discovery.issuer ~jwk jwt
-      |> fmt_error
-    (* When there is only 1 key in the jwks we can try with that according to
-       the OIDC spec *)
-    | None when List.length config.jwks.keys = 1 ->
-      let jwk = List.hd config.jwks.keys in
-      Oidc.IDToken.validate ~nonce ~client:config.client
-        ~issuer:config.discovery.issuer ~jwk jwt
-      |> fmt_error
-    | None -> Error "could not find JWK")
-  >>= fun jwt ->
+  Jose.Jwt.of_string token.Oidc.Token.Response.id_token
+  >>= (fun jwt ->
+        (* We always use `nonce` (as CSRF tag) but we don't store it
+           anywhere, we only check that the the `nonce` in token belongs to the
+           current session (see authenticate function).
+
+           So here we extract the `nonce` from jwt and pass it to validation so
+           validation doesn't fail. *)
+        (match Yojson.Safe.Util.member "nonce" jwt.payload with
+        | `String nonce -> Ok nonce
+        | _ -> Error `Missing_nonce)
+        >>= fun nonce ->
+        Oidc.Token.Response.validate ~nonce ~jwks:config.jwks
+          ~client:config.client ~discovery:config.discovery token
+        >>= fun _ -> Ok (jwt, nonce))
+  |> Result.map_error (fun err ->
+         "error validating id_token: "
+         ^ Oidc.IDToken.validation_error_to_string err)
+  >>= fun (jwt, nonce) ->
   Hyper_helper.parse_json jwt.Jose.Jwt.raw_payload ~f:(fun json ->
       let open Yojson.Basic.Util in
       Ok
