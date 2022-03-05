@@ -4,6 +4,7 @@ type config
 (** Configured OIDC client. *)
 
 val configure :
+  ?user_claims:string list ->
   ?scope:string list ->
   client_id:string ->
   client_secret:string ->
@@ -34,6 +35,7 @@ val configure :
  *)
 
 val google :
+  ?user_claims:string list ->
   ?scope:string list ->
   client_id:string ->
   client_secret:string ->
@@ -49,6 +51,7 @@ val google :
   *)
 
 val microsoft :
+  ?user_claims:string list ->
   ?scope:string list ->
   client_id:string ->
   client_secret:string ->
@@ -60,6 +63,22 @@ val microsoft :
   Pre-configured Microsoft OIDC client.
 
   See "Azure Active Directory" at https://portal.azure.com/ for acquiring
+  [client_id], [client_secret] values.
+  *)
+
+val twitch :
+  ?user_claims:string list ->
+  ?scope:string list ->
+  client_id:string ->
+  client_secret:string ->
+  redirect_uri:string ->
+  unit ->
+  config
+(**
+
+  Pre-configured Twitch OIDC client.
+
+  See https://dev.twitch.tv/docs/authentication/#registration for acquiring
   [client_id], [client_secret] values.
   *)
 
