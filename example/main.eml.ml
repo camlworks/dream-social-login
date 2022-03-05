@@ -37,16 +37,16 @@ let twitch = {
   redirect_uri = Sys.getenv "TWITCH_REDIRECT_URI";
 }
 
-let microsoft = Dream_oidc.microsoft
-  ~client_id:(Sys.getenv "MS_CLIENT_ID")
-  ~client_secret:(Sys.getenv "MS_CLIENT_SECRET")
-  ~redirect_uri:(Sys.getenv "MS_REDIRECT_URI")
-  ()
-
 let google = Dream_oidc.google
   ~client_id:(Sys.getenv "GOOGLE_CLIENT_ID")
   ~client_secret:(Sys.getenv "GOOGLE_CLIENT_SECRET")
   ~redirect_uri:(Sys.getenv "GOOGLE_REDIRECT_URI")
+  ()
+
+let microsoft = Dream_oidc.microsoft
+  ~client_id:(Sys.getenv "MS_CLIENT_ID")
+  ~client_secret:(Sys.getenv "MS_CLIENT_SECRET")
+  ~redirect_uri:(Sys.getenv "MS_REDIRECT_URI")
   ()
 
 (* XXX: See https://github.com/aantron/hyper/issues/5 *)
@@ -56,12 +56,11 @@ let google = Dream_oidc.google
 (*   ~redirect_uri:(Sys.getenv "GITLAB_REDIRECT_URI") *)
 (*   "https://gitlab.com" *)
 
-(* XXX: See https://github.com/ulrikstrid/ocaml-oidc/issues/11 *)
-let twitch_oidc = Dream_oidc.configure
+let twitch_oidc = Dream_oidc.twitch
   ~client_id:(Sys.getenv "TWITCH_CLIENT_ID")
   ~client_secret:(Sys.getenv "TWITCH_CLIENT_SECRET")
   ~redirect_uri:(Sys.getenv "TWITCH_OIDC_REDIRECT_URI")
-  "https://id.twitch.tv/oauth2"
+  ()
 
 (* Now provide functions to signin, signout and query current user (if any) from
    the request.
@@ -114,7 +113,7 @@ let render request =
     <p><a href="<%s Dream_oauth2.Twitch.authorize_url twitch request %>">Sign in with Twitch</a></p>
     <p><a href="<%s Dream_oidc.authorize_url google request %>">Sign in with Google</a></p>
     <p><a href="<%s Dream_oidc.authorize_url twitch_oidc request %>">Sign in with Twitch (OIDC)</a></p>
-    <p><a href="<%s Dream_oidc.authorize_url microsoft request %>">Sign in with Microsoft (OIDC)</a></p>
+    <p><a href="<%s Dream_oidc.authorize_url microsoft request %>">Sign in with Microsoft</a></p>
     <hr>
 % | Some user ->
     <p>Signed in as <%s user %>.<p>

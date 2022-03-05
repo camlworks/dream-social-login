@@ -8,6 +8,7 @@ type config = {
   discovery : Oidc.Discover.t;
   jwks : Jose.Jwks.t;
   scope : string list;
+  user_claims : string list;
 }
 
 let discover provider_uri =
@@ -28,8 +29,8 @@ let jwks discovery =
   let%lwt body = Dream.body resp in
   Lwt.return_ok (Jose.Jwks.of_string body)
 
-let configure ?(scope = []) ~client_id ~client_secret ~redirect_uri provider_uri
-    =
+let configure ?(user_claims = []) ?(scope = []) ~client_id ~client_secret
+    ~redirect_uri provider_uri =
   let redirect_uri = Uri.of_string redirect_uri in
   let provider_uri = Uri.of_string provider_uri in
   let client =
@@ -52,24 +53,47 @@ let configure ?(scope = []) ~client_id ~client_secret ~redirect_uri provider_uri
     | Ok jwks -> jwks
     | Error err -> failwith err
   in
-  { client; redirect_uri; provider_uri; discovery; jwks; scope }
+  { client; redirect_uri; provider_uri; discovery; jwks; scope; user_claims }
 
-let google ?(scope = []) ~client_id ~client_secret ~redirect_uri () =
-  configure
+let google ?user_claims ?(scope = []) ~client_id ~client_secret ~redirect_uri ()
+    =
+  configure ?user_claims
     ~scope:("profile" :: "email" :: scope)
     ~client_id ~client_secret ~redirect_uri "https://accounts.google.com"
 
-let microsoft ?(scope = []) ~client_id ~client_secret ~redirect_uri () =
-  configure
+let microsoft ?user_claims ?(scope = []) ~client_id ~client_secret ~redirect_uri
+    () =
+  configure ?user_claims
     ~scope:("profile" :: "email" :: scope)
     ~client_id ~client_secret ~redirect_uri
     "https://login.microsoftonline.com/consumers/v2.0"
 
+let twitch ?(user_claims = []) ?(scope = []) ~client_id ~client_secret
+    ~redirect_uri () =
+  let user_claims =
+    "email" :: "email_verified" :: "preferred_username" :: user_claims
+  in
+  configure ~user_claims
+    ~scope:("user:read:email" :: scope)
+    ~client_id ~client_secret ~redirect_uri "https://id.twitch.tv/oauth2"
+
 let authorize_url config req =
   let query =
     let scope = "openid" :: config.scope in
-    Oidc.Parameters.make ~scope config.client ~state:(Dream.csrf_token req)
-      ~nonce:(Dream.csrf_token req) ~redirect_uri:config.redirect_uri
+    let claims =
+      match config.user_claims with
+      | [] -> None
+      | user_claims ->
+        Some
+          (`Assoc
+            [
+              ( "userinfo",
+                `Assoc (List.map (fun claim -> (claim, `Null)) user_claims) );
+            ])
+    in
+    Oidc.Parameters.make ?claims ~scope config.client
+      ~state:(Dream.csrf_token req) ~nonce:(Dream.csrf_token req)
+      ~redirect_uri:config.redirect_uri
     |> Oidc.Parameters.to_query
   in
   config.discovery.Oidc.Discover.authorization_endpoint
@@ -166,11 +190,16 @@ let user_profile config ~access_token ~id_token =
           let open Yojson.Basic.Util in
           let sub = member "sub" json |> to_string in
           if String.equal sub id_token.sub then
+            let name =
+              match member "name" json with
+              | `Null -> member "preferred_username" json |> to_string_option
+              | json -> to_string_option json
+            in
             Ok
               {
                 Dream_oauth2.User_profile.provider = id_token.iss;
                 id = sub;
-                name = member "name" json |> to_string_option;
+                name;
                 email = member "email" json |> to_string_option;
                 email_verified = member "email_verified" json |> to_bool_option;
               }
