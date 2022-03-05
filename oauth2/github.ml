@@ -71,6 +71,7 @@ let user_profile _config _req ~access_token =
              name = Some login;
              email = Some email;
              email_verified = None;
+             json;
            }))
 
 let authenticate config =

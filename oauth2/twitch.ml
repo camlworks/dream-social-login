@@ -68,6 +68,7 @@ let user_profile config _request ~access_token =
              name = user |> member "display_name" |> to_string_option;
              email = user |> member "email" |> to_string_option;
              email_verified = None;
+             json;
            }))
 
 let authenticate config =

@@ -202,6 +202,7 @@ let user_profile config ~access_token ~id_token =
                 name;
                 email = member "email" json |> to_string_option;
                 email_verified = member "email_verified" json |> to_bool_option;
+                json;
               }
           else
             Error "invalid user_profile")

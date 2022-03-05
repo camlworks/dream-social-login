@@ -13,6 +13,7 @@ module User_profile : sig
         (** [None] means there's no info about email verification status, [Some
             verified] means the email verification status is [verified], a
             [bool] value. *)
+    json : Yojson.Basic.t;  (** Original JSON payload. *)
   }
   (** Information about an authenticated user. *)
 end
