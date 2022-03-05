@@ -5,6 +5,7 @@ module User_profile = struct
     name : string option;
     email : string option;
     email_verified : bool option;
+    json : Yojson.Basic.t;
   }
 end
 
