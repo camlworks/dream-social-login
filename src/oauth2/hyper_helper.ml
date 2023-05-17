@@ -35,11 +35,11 @@ let post ?(headers = []) ?body uri =
     match body with
     | None -> (None, headers)
     | Some (`String body) ->
-      ( Some (Dream_pure.Stream.string body),
+      ( Some body,
         ("Content-Length", Int.to_string (String.length body)) :: headers )
     | Some (`Form params) ->
       let body = Dream_pure.Formats.to_form_urlencoded params in
-      ( Some (Dream_pure.Stream.string body),
+      ( Some body,
         ("Content-Type", "application/x-www-form-urlencoded")
         :: ("Content-Length", Int.to_string (String.length body))
         :: headers )

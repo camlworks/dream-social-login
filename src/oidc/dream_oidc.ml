@@ -60,6 +60,9 @@ let configure oidc =
   let open Lwt_result.Infix in
   oidc.config <-
     ( discover oidc.provider_uri >>= fun discovery ->
+      match discovery with
+      | Error _ -> Lwt.return_error "OIDC discovery error (details TODO)"
+      | Ok discovery ->
       jwks discovery >>= fun jwks ->
       match discovery.Oidc.Discover.userinfo_endpoint with
       | None -> Lwt.return_error "OIDC discovery is missing userinfo_endpoint"
@@ -69,6 +72,7 @@ let configure oidc =
 let authorize_url oidc req =
   let query =
     let scope = "openid" :: oidc.scope in
+    let scope = List.map Oidc.Scopes.of_string scope in
     let claims =
       match oidc.user_claims with
       | [] -> None
@@ -80,9 +84,9 @@ let authorize_url oidc req =
                 `Assoc (List.map (fun claim -> (claim, `Null)) user_claims) );
             ])
     in
-    Oidc.Parameters.make ?claims ~scope oidc.client
+    Oidc.Parameters.make ?claims ~scope ~client_id:oidc.client.Oidc.Client.id
       ~state:(Dream.csrf_token req) ~nonce:(Dream.csrf_token req)
-      ~redirect_uri:oidc.redirect_uri
+      ~redirect_uri:oidc.redirect_uri ()
     |> Oidc.Parameters.to_query
   in
   Lwt_result.bind oidc.config (fun config' ->
@@ -100,7 +104,16 @@ module Id_token = struct
 
   let of_token_response ~discovery ~jwks ~client token =
     let ( >>= ) = Result.bind in
-    Jose.Jwt.of_string token.Oidc.Token.Response.id_token
+    (* TODO This Option.get is based on usage upstream in ocaml-oidc. It's
+       probably worth reviewing whether it is safe - it appears to be None only
+       in providers, which this library does not implement. Replace this comment
+       by an argument why this is ok. *)
+    (* TODO Jose.Jwt.of_string had is signature changed in
+       https://github.com/ulrikstrid/ocaml-jose/pull/37, which also added
+       unsafe_of_string. We are now using unsafe_of_string just to get this
+       building, but we should look into how to use of_string correctly, or
+       whether it should be used. *)
+    Jose.Jwt.unsafe_of_string (Option.get token.Oidc.Token.Response.id_token)
     >>= (fun jwt ->
           (* We always use `nonce` (as CSRF tag) but we don't store it
              anywhere, we only check that the the `nonce` in token belongs to the
@@ -130,9 +143,10 @@ end
 
 let token oidc ~code =
   let open Lwt_result.Infix in
+  let scope = [Oidc.Scopes.of_string "openid"] in
   let body =
     Oidc.Token.Request.make ~client:oidc.client ~grant_type:"authorization_code"
-      ~scope:["openid"] ~redirect_uri:oidc.redirect_uri ~code
+      ~scope ~redirect_uri:oidc.redirect_uri ~code
     |> Oidc.Token.Request.to_body_string
   in
   let headers =
@@ -155,9 +169,11 @@ let token oidc ~code =
   >>= fun resp ->
   let%lwt body = Dream.body resp in
   match Oidc.Token.Response.of_string body with
-  | exception Yojson.Json_error _ ->
+  | exception Yojson.Json_error _ | Error _ ->
+    (* TODO Does Oidc still raise exceptions here, or has error handling been
+       completely converted to results? *)
     Lwt.return_error "error parsing token payload"
-  | token -> (
+  | Ok token -> (
     Lwt.return
       (Id_token.of_token_response ~client:oidc.client ~jwks:config'.jwks
          ~discovery:config'.discovery token)

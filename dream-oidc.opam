@@ -9,11 +9,11 @@ maintainer: "Andrey Popp <me@andreypopp.com>"
 authors: ["Andrey Popp <me@andreypopp.com>"]
 bug-reports: "https://github.com/camlworks/dream-social-login/issues"
 depends: [
-  "oidc" {= "dev"}
+  "oidc"
   "dream" {>= "1.0.0~alpha4"}
   "dream-encoding"
   "dune" {>= "2.9.0"}
-  "hyper" {= "1.0.0~alpha1"}
+  "hyper"
   "lwt_ppx"
   "yojson"
   "odoc" {with-doc}
@@ -35,10 +35,5 @@ build: [
   ["dune" "install" "-p" name "--create-install-files" name]
 ]
 pin-depends: [
-  ["hyper.1.0.0~alpha1" "git+https://github.com/andreypopp/hyper.git#1f33c54"]
-  ["dream.1.0.0~alpha4" "git+https://github.com/aantron/dream.git#dcc3513"]
-  ["dream-httpaf.1.0.0~alpha4" "git+https://github.com/aantron/dream.git#dcc3513"]
-  ["dream-pure.1.0.0~alpha4" "git+https://github.com/aantron/dream.git#dcc3513"]
-  ["dream-encoding.dev" "git+https://github.com/andreypopp/dream-encoding.git#9e8b8ee"]
-  ["oidc.dev" "git+https://github.com/ulrikstrid/ocaml-oidc.git#6af260"]
+  ["oidc.dev" "git+https://github.com/ulrikstrid/ocaml-oidc.git#f70d979"]
 ]
