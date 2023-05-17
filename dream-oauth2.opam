@@ -1,13 +1,19 @@
 opam-version: "2.0"
+
 synopsis: "OAuth2 authentication for Dream"
 description: """
 This library allows one to add authentication with OAuth2 providers to Dream
 applications.
 """
+
+license: "MIT"
 homepage: "https://github.com/camlworks/dream-social-login"
-maintainer: "Andrey Popp <me@andreypopp.com>"
-authors: ["Andrey Popp <me@andreypopp.com>"]
 bug-reports: "https://github.com/camlworks/dream-social-login/issues"
+dev-repo: "git+https://github.com/camlworks/dream-social-login.git"
+
+author: "Andrey Popp <me@andreypopp.com>"
+maintainer: "Anton Bachin <antonbachin@yahoo.com>"
+
 depends: [
   "dream" {>= "1.0.0~alpha4"}
   "dream-encoding"
@@ -17,19 +23,7 @@ depends: [
   "yojson"
   "odoc" {with-doc}
 ]
+
 build: [
-  ["dune" "subst"] {dev}
-  [
-    "dune"
-    "build"
-    "-p"
-    name
-    "-j"
-    jobs
-    "--promote-install-files=false"
-    "@install"
-    "@runtest" {with-test}
-    "@doc" {with-doc}
-  ]
-  ["dune" "install" "-p" name "--create-install-files" name]
+  ["dune" "build" "-p" name "-j" jobs]
 ]
