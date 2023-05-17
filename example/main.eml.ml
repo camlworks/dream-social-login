@@ -20,7 +20,6 @@ let github =
     ~client_id:(Sys.getenv "GH_CLIENT_ID")
     ~client_secret:(Sys.getenv "GH_CLIENT_SECRET")
     ~redirect_uri:(Sys.getenv "GH_REDIRECT_URI")
-    ()
 
 let stackoverflow =
   Dream_oauth.Stackoverflow.make
@@ -28,14 +27,12 @@ let stackoverflow =
     ~client_secret:(Sys.getenv "SO_CLIENT_SECRET")
     ~redirect_uri:(Sys.getenv "SO_REDIRECT_URI")
     ~key:(Sys.getenv "SO_KEY")
-    ()
 
 let twitch =
   Dream_oauth.Twitch.make
     ~client_id:(Sys.getenv "TWITCH_CLIENT_ID")
     ~client_secret:(Sys.getenv "TWITCH_CLIENT_SECRET")
     ~redirect_uri:(Sys.getenv "TWITCH_REDIRECT_URI")
-    ()
 
 let google = Dream_oidc.google
   ~client_id:(Sys.getenv "GOOGLE_CLIENT_ID")

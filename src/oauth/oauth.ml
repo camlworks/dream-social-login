@@ -1,4 +1,5 @@
-module User_profile = struct
+module User_profile =
+struct
   type t = {
     id : string;
     provider : string;
@@ -9,14 +10,15 @@ module User_profile = struct
   }
 end
 
-type provider_error =
-  [ `Invalid_request
+type provider_error = [
+  | `Invalid_request
   | `Unauthorized_client
   | `Access_denied
   | `Unsupported_response_type
   | `Invalid_scope
   | `Server_error
-  | `Temporarily_unavailable ]
+  | `Temporarily_unavailable
+]
 (** See https://www.rfc-editor.org/rfc/rfc6749.html#section-4.1.2.1 *)
 
 let provider_error_of_string = function
@@ -38,56 +40,67 @@ let provider_error_to_string = function
   | `Server_error -> "server_error"
   | `Temporarily_unavailable -> "temporarily_unavailable"
 
-type authenticate_result =
-  [ `Ok of User_profile.t
+type authenticate_result = [
+  | `Ok of User_profile.t
   | `Expired
   | `Provider_error of provider_error * string option
-  | `Error of string ]
+  | `Error of string
+]
 
-let log = Dream.sub_log "dream-oauth2"
+let log =
+  Dream.sub_log "dream-oauth2"
 
-let authenticate ~access_token ~user_profile req =
+let authenticate ~access_token ~user_profile request =
   let exception Return of authenticate_result in
   let errorf fmt =
     let kerr message = raise (Return (`Error message)) in
     Printf.ksprintf kerr fmt
   in
+
   try%lwt
-    let () =
-      match Dream.query req "error" with
-      | None -> ()
-      | Some err -> (
-        match provider_error_of_string err with
-        | Some err ->
-          let desc = Dream.query req "error_description" in
-          raise (Return (`Provider_error (err, desc)))
-        | None -> errorf "provider returned unknown error code: %s" err)
-    in
+
+    begin match Dream.query request "error" with
+    | None ->
+      ()
+    | Some error ->
+      match provider_error_of_string error with
+      | Some error ->
+        let description = Dream.query request "error_description" in
+        raise (Return (`Provider_error (error, description)))
+      | None ->
+        errorf "provider returned unknown error code: %s" error
+    end;
+
     let%lwt () =
       let state =
-        match Dream.query req "state" with
+        match Dream.query request "state" with
         | Some v -> v
-        | None -> errorf "no `state` parameter in callback request"
+        | None -> errorf "no 'state' parameter in callback request"
       in
-      match%lwt Dream.verify_csrf_token req state with
+      match%lwt Dream.verify_csrf_token request state with
       | `Ok -> Lwt.return ()
       | `Expired _ | `Wrong_session -> raise (Return `Expired)
-      | `Invalid -> errorf "invalid `state` parameter"
+      | `Invalid -> errorf "invalid 'state' parameter"
     in
+
     let code =
-      match Dream.query req "code" with
+      match Dream.query request "code" with
       | Some v -> v
-      | None -> errorf "no `code` parameter in callback request"
+      | None -> errorf "no 'code' parameter in callback request"
     in
     let%lwt access_token =
-      match%lwt access_token req ~code with
+      match%lwt access_token request ~code with
       | Ok access_token -> Lwt.return access_token
-      | Error err -> errorf "error getting access_token: %s" err
+      | Error error -> errorf "error getting access_token: %s" error
     in
+
     let%lwt user_profile =
-      match%lwt user_profile req ~access_token with
+      match%lwt user_profile request ~access_token with
       | Ok user_profile -> Lwt.return user_profile
-      | Error err -> errorf "error getting user_profile: %s" err
+      | Error error -> errorf "error getting user_profile: %s" error
     in
+
     Lwt.return (`Ok user_profile)
-  with Return result -> Lwt.return result
+
+  with Return result ->
+    Lwt.return result

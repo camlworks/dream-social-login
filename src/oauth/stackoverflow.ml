@@ -1,95 +1,91 @@
-let log = Dream.sub_log "dream-oauth2-stackoverflow"
-
-type oauth2 = {
+type client = {
   client_id : string;
   client_secret : string;
   redirect_uri : string;
   key : string;
 }
 
-let make ~client_id ~client_secret ~redirect_uri ~key () =
-  { client_id; client_secret; redirect_uri; key }
+let make ~client_id ~client_secret ~redirect_uri ~key = {
+  client_id;
+  client_secret;
+  redirect_uri;
+  key;
+}
 
-let authorize_endpoint = Uri.of_string "https://stackoverflow.com/oauth"
+let authorize_endpoint =
+  Uri.of_string "https://stackoverflow.com/oauth"
 
 let token_endpoint =
   Uri.of_string "https://stackoverflow.com/oauth/access_token"
 
-let userinfo_endpoint = Uri.of_string "https://api.stackexchange.com/2.3/me"
+let userinfo_endpoint =
+  Uri.of_string "https://api.stackexchange.com/2.3/me"
 
-let authorize_url oauth2 req =
+let authorize_url client request =
+  let query = Some [
+    "client_id", [client.client_id];
+    "redirect_uri", [client.redirect_uri];
+    "state", [Dream.csrf_token request];
+  ]
+  in
   authorize_endpoint
-  |> Uri.with_uri
-       ~query:
-         (Some
-            [
-              ("client_id", [oauth2.client_id]);
-              ("redirect_uri", [oauth2.redirect_uri]);
-              ("state", [Dream.csrf_token req]);
-            ])
+  |> Uri.with_uri ~query
   |> Uri.to_string
 
-let access_token oauth2 _request ~code =
-  log.debug (fun log -> log "getting access_token");
-  let%lwt resp =
-    Hyper_helper.post token_endpoint
-      ~body:
-        (`Form
-          [
-            ("client_id", oauth2.client_id);
-            ("client_secret", oauth2.client_secret);
-            ("code", code);
-            ("redirect_uri", oauth2.redirect_uri);
-          ])
-      ~headers:[("Accept", "*/*")]
+let access_token client _request ~code =
+  let body = `Form [
+    "client_id", client.client_id;
+    "client_secret", client.client_secret;
+    "code", code;
+    "redirect_uri", client.redirect_uri;
+  ]
   in
-  match resp with
-  | Ok resp ->
-    let%lwt body = Dream_pure.Message.body resp in
-    let data = Dream_pure.Formats.from_form_urlencoded body in
+  let headers = [("Accept", "*/*")] in
+  match%lwt Hyper_helper.post token_endpoint ~body ~headers with
+  | Error _ as error -> Lwt.return error
+  | Ok response ->
+    let%lwt body = Hyper.body response in
+    let data = Dream.from_form_urlencoded body in
     let access_token =
-      ListLabels.find_map data ~f:(function
+      data |> List.find_map @@ function
         | "access_token", access_token -> Some access_token
-        | _ -> None)
+        | _ -> None
     in
-    Lwt.return
-      (match access_token with
-      | Some token -> Ok token
-      | None ->
-        log.debug (fun log -> log "access_token response body=%s" body);
-        Error "no `access_token` in the response")
-  | Error err -> Lwt.return_error err
+    match access_token with
+    | Some token ->
+      Lwt.return (Ok token)
+    | None ->
+      Lwt.return (Error "no 'access_token' in the response")
 
-let user_profile oauth2 _request ~access_token =
-  log.debug (fun log -> log "getting user_profile");
-  Lwt_result.bind
-    (Hyper_helper.get
-       (Uri.with_uri userinfo_endpoint
-          ~query:
-            (Some
-               [
-                 ("access_token", [access_token]);
-                 ("key", [oauth2.key]);
-                 ("site", ["stackoverflow"]);
-               ]))
-       ~headers:
-         [
-           ("Authorization", "token " ^ access_token);
-           ("Accept", "application/json");
-         ])
-    (Hyper_helper.parse_json_body ~f:(fun json ->
-         let open Yojson.Basic.Util in
-         let user = json |> member "items" |> index 0 in
-         Ok
-           {
-             Oauth.User_profile.provider = "stackoverflow";
-             id = user |> member "user_id" |> to_int |> Int.to_string;
-             name = user |> member "display_name" |> to_string_option;
-             email = None;
-             email_verified = None;
-             json;
-           }))
+let user_profile client _request ~access_token =
+  let headers = [
+    "Authorization", "token " ^ access_token;
+    "Accept", "application/json";
+  ]
+  in
+  let query = Some [
+    "access_token", [access_token];
+    "key", [client.key];
+    "site", ["stackoverflow"];
+  ]
+  in
+  let uri = Uri.with_uri userinfo_endpoint ~query in
+  match%lwt Hyper_helper.get uri ~headers with
+  | Error _ as error ->
+    Lwt.return error
+  | Ok response ->
+    Hyper_helper.parse_json_body response @@ fun json ->
+    let open Yojson.Basic.Util in
+    let user = json |> member "items" |> index 0 in
+    Ok {
+      Oauth.User_profile.provider = "stackoverflow";
+      id = user |> member "user_id" |> to_int |> Int.to_string;
+      name = user |> member "display_name" |> to_string_option;
+      email = None;
+      email_verified = None;
+      json;
+    }
 
-let authenticate oauth2 =
-  Oauth.authenticate ~access_token:(access_token oauth2)
-    ~user_profile:(user_profile oauth2)
+let authenticate client =
+  Oauth.authenticate
+    ~access_token:(access_token client) ~user_profile:(user_profile client)

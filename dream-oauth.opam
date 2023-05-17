@@ -20,7 +20,10 @@ depends: [
   "dune" {>= "2.9.0"}
   "hyper"
   "lwt_ppx"
+  "ocaml"
+  "uri"
   "yojson"
+
   "odoc" {with-doc}
 ]
 

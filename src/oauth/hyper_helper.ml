@@ -1,27 +1,32 @@
-(* XXX: should be added by Hyper? *)
+(* TODO should be added by Hyper? *)
 let user_agent = "hyper/1.0.0"
 let log = Dream.sub_log "dream-oauth2-http"
+(* TODO Do we really need a separate sub-log? *)
 
 let url ?(params = []) base =
   match params with
   | [] -> base
   | params -> Printf.sprintf "%s?%s" base (Hyper.to_form_urlencoded params)
+    (* TODO Consider using uri library here. *)
 
-let handle_resp resp =
-  match Dream_pure.Message.status resp with
-  | #Dream_pure.Status.successful -> (
-    match%lwt Dream_encoding.with_decoded_body resp with
-    | Ok resp -> Lwt.return_ok resp
-    | Error err ->
-      log.debug (fun log -> log "error decoding response body: %s" err);
-      Lwt.return_error "error decoding response body")
+let handle response =
+  match Hyper.status response with
+  | #Hyper.successful ->
+    begin match%lwt Dream_encoding.with_decoded_body response with
+    | Ok response ->
+      Lwt.return_ok response
+    | Error error ->
+      log.debug (fun log -> log "error decoding response body: %s" error);
+      Lwt.return_error "error decoding response body"
+    end
   | status ->
-    let status = Dream_pure.Status.status_to_string status in
+    let status = Hyper.status_to_string status in
     let%lwt body =
-      match%lwt Dream_encoding.with_decoded_body resp with
-      | Ok resp -> Dream_pure.Message.body resp
+      match%lwt Dream_encoding.with_decoded_body response with
+      | Ok response -> Hyper.body response
       | Error _ -> Lwt.return "<error>"
     in
+    (* TODO Should the body be logged here? *)
     log.debug (fun log -> log "request failed status=%s body=%s" status body);
     Lwt.return_error ("response status code: " ^ status)
 
@@ -33,25 +38,31 @@ let post ?(headers = []) ?body uri =
   in
   let body, headers =
     match body with
-    | None -> (None, headers)
+    | None ->
+      (None, headers)
     | Some (`String body) ->
-      ( Some body,
-        ("Content-Length", Int.to_string (String.length body)) :: headers )
+      let headers =
+        ("Content-Length", Int.to_string (String.length body))::headers in
+      (Some body, headers)
     | Some (`Form params) ->
-      let body = Dream_pure.Formats.to_form_urlencoded params in
-      ( Some body,
-        ("Content-Type", "application/x-www-form-urlencoded")
-        :: ("Content-Length", Int.to_string (String.length body))
-        :: headers )
+      let body = Hyper.to_form_urlencoded params in
+      let headers =
+        ("Content-Type", "application/x-www-form-urlencoded")::
+        ("Content-Length", Int.to_string (String.length body))::
+        headers
+      in
+      (Some body, headers)
   in
-  Lwt.bind
-    (Hyper.run
-    @@ Hyper.request (Uri.to_string uri) ~method_:`POST ?body
-         ~headers:
-           (("Host", Uri.host uri |> Option.get)
-           :: ("User-Agent", user_agent)
-           :: headers))
-    handle_resp
+  let headers =
+    ("Host", Uri.host uri |> Option.get)::
+    ("User-Agent", user_agent)::
+    headers
+  in
+  let%lwt response =
+    Hyper.run
+    @@ Hyper.request ~method_:`POST ?body ~headers (Uri.to_string uri)
+  in
+  handle response
 
 let get ?(headers = []) uri =
   let uri =
@@ -59,18 +70,21 @@ let get ?(headers = []) uri =
     | Some "https" -> Uri.with_uri ~port:(Some 443) uri
     | _ -> uri
   in
-  Lwt.bind
-    (Hyper.run
-    @@ Hyper.request (Uri.to_string uri) ~method_:`GET
-         ~headers:
-           (("Host", Uri.host uri |> Option.get)
-           :: ("User-Agent", user_agent)
-           :: headers))
-    handle_resp
+  let headers =
+    ("Host", Uri.host uri |> Option.get)::
+    ("User-Agent", user_agent)::
+    headers
+  in
+  let%lwt response =
+    Hyper.run
+    @@ Hyper.request ~method_:`GET ~headers (Uri.to_string uri)
+  in
+  handle response
 
-let parse_json ~f data =
+let parse_json data f =
   match Yojson.Basic.from_string data with
   | exception Yojson.Json_error _ ->
+    (* TODO Should bodies be logged? *)
     log.debug (fun log -> log "error parsing response json body=%s" data);
     Error "error parsing json response body"
   | json -> (
@@ -79,6 +93,6 @@ let parse_json ~f data =
       log.debug (fun log -> log "error parsing response json body=%s" data);
       Error "error parsing json response body")
 
-let parse_json_body ~f resp =
-  let%lwt body = Dream_pure.Message.body resp in
-  Lwt.return (parse_json ~f body)
+let parse_json_body response f =
+  let%lwt body = Dream_pure.Message.body response in
+  Lwt.return (parse_json body f)
