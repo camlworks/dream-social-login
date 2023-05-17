@@ -15,7 +15,7 @@ let messages = ref [
 
 let () = Dream.initialize_log ~level:`Debug ()
 
-let github =
+(* let github =
   Dream_oauth2.Github.make
     ~client_id:(Sys.getenv "GH_CLIENT_ID")
     ~client_secret:(Sys.getenv "GH_CLIENT_SECRET")
@@ -28,7 +28,7 @@ let stackoverflow =
     ~client_secret:(Sys.getenv "SO_CLIENT_SECRET")
     ~redirect_uri:(Sys.getenv "SO_REDIRECT_URI")
     ~key:(Sys.getenv "SO_KEY")
-    ()
+    () *)
 
 let twitch =
   Dream_oauth2.Twitch.make
@@ -37,7 +37,7 @@ let twitch =
     ~redirect_uri:(Sys.getenv "TWITCH_REDIRECT_URI")
     ()
 
-let google = Dream_oidc.google
+(* let google = Dream_oidc.google
   ~client_id:(Sys.getenv "GOOGLE_CLIENT_ID")
   ~client_secret:(Sys.getenv "GOOGLE_CLIENT_SECRET")
   ~redirect_uri:(Sys.getenv "GOOGLE_REDIRECT_URI")
@@ -47,7 +47,7 @@ let microsoft = Dream_oidc.microsoft
   ~client_id:(Sys.getenv "MS_CLIENT_ID")
   ~client_secret:(Sys.getenv "MS_CLIENT_SECRET")
   ~redirect_uri:(Sys.getenv "MS_REDIRECT_URI")
-  ()
+  () *)
 
 (* XXX: See https://github.com/aantron/hyper/issues/5 *)
 (* let gitlab = Dream_oidc.make *)
@@ -56,11 +56,11 @@ let microsoft = Dream_oidc.microsoft
 (*   ~redirect_uri:(Sys.getenv "GITLAB_REDIRECT_URI") *)
 (*   "https://gitlab.com" *)
 
-let twitch_oidc = Dream_oidc.twitch
+(* let twitch_oidc = Dream_oidc.twitch
   ~client_id:(Sys.getenv "TWITCH_CLIENT_ID")
   ~client_secret:(Sys.getenv "TWITCH_CLIENT_SECRET")
   ~redirect_uri:(Sys.getenv "TWITCH_OIDC_REDIRECT_URI")
-  ()
+  () *)
 
 (* Now provide functions to signin, signout and query current user (if any) from
    the request.
@@ -72,7 +72,7 @@ let twitch_oidc = Dream_oidc.twitch
 
 let signin user request =
   let user =
-    Option.value user.Dream_oidc.User_profile.name ~default:user.id ^
+    Option.value user.Dream_oauth2.User_profile.name ~default:user.id ^
     " (" ^ user.provider ^ ")"
   in
   Dream.set_session_field request "user" user
@@ -91,19 +91,7 @@ let user request =
    links to start the sign in flow with each of the OAuth2 providers we have
    configured. *)
 
-let oidc_authorize_url oidc name request =
-  match%lwt Dream_oidc.authorize_url oidc request with
-  | Ok url ->
-    Lwt.return @@
-      <a href="<%s url %>">Sign in with <%s name %></a>
-  | Error _ ->
-    Lwt.return @@
-      <span>"Sign in with <%s name %>" is not available</span>
-
 let render request =
-  let%lwt google_url = oidc_authorize_url google "Google" request in
-  let%lwt microsoft_url = oidc_authorize_url microsoft "Microsoft" request in
-  let%lwt twitch_oidc_url = oidc_authorize_url twitch_oidc "Twitch (OIDC)" request in
   Lwt.return @@
   <html>
   <head>
@@ -121,12 +109,7 @@ let render request =
 % begin match user request with
 % | None ->
     <p>Please sign in to chat!</p>
-    <p><a href="<%s Dream_oauth2.Github.authorize_url github request %>">Sign in with GitHub</a></p>
-    <p><a href="<%s Dream_oauth2.Stackoverflow.authorize_url stackoverflow request %>">Sign in with StackOverflow</a></p>
     <p><a href="<%s Dream_oauth2.Twitch.authorize_url twitch request %>">Sign in with Twitch</a></p>
-    <p><%s! google_url %></p>
-    <p><%s! microsoft_url %></p>
-    <p><%s! twitch_oidc_url %></p>
     <hr>
 % | Some user ->
     <p>Signed in as <%s user %>.<p>
@@ -177,7 +160,7 @@ let authenticate_handler path authenticate =
   )
 
 let () =
-  let () =
+  (* let () =
     (* Configure OIDC providers at startup. *)
     Lwt_main.run @@
       Lwt_list.iter_p
@@ -192,25 +175,25 @@ let () =
             Lwt.return ()
         )
         [google; microsoft; twitch_oidc]
-  in
-  Dream.run ~tls:true
+  in *)
+  Dream.run ~tls:true ~interface:"0.0.0.0" ~port:80
   @@ Dream.logger
   @@ Dream.memory_sessions
   @@ Dream.router [
 
-    authenticate_handler "/oauth2/callback/github" (
+    (* authenticate_handler "/oauth2/callback/github" (
       Dream_oauth2.Github.authenticate github);
     authenticate_handler "/oauth2/callback/stackoverflow" (
-      Dream_oauth2.Stackoverflow.authenticate stackoverflow);
+      Dream_oauth2.Stackoverflow.authenticate stackoverflow); *)
     authenticate_handler "/oauth2/callback/twitch" (
       Dream_oauth2.Twitch.authenticate twitch);
 
-    authenticate_handler "/oidc/callback/google" (
-      Dream_oidc.authenticate google);
-    authenticate_handler "/oidc/callback/twitch" (
-      Dream_oidc.authenticate twitch_oidc);
-    authenticate_handler "/oidc/callback/microsoft" (
-      Dream_oidc.authenticate microsoft);
+    (* authenticate_handler "/oidc/callback/google" (
+      Dream_oidc.authenticate google); *)
+    (* authenticate_handler "/oidc/callback/twitch" (
+      Dream_oidc.authenticate twitch_oidc); *)
+    (* authenticate_handler "/oidc/callback/microsoft" (
+      Dream_oidc.authenticate microsoft); *)
 
     Dream.get "/" (fun request ->
       let%lwt page = render request in
