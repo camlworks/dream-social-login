@@ -1,6 +1,6 @@
 (library
- (name dream_oauth2)
- (public_name dream-oauth2)
+ (name dream_oauth)
+ (public_name dream-oauth)
  (preprocess (pps lwt_ppx))
  (libraries
   dream

@@ -16,14 +16,14 @@ let messages = ref [
 let () = Dream.initialize_log ~level:`Debug ()
 
 let github =
-  Dream_oauth2.Github.make
+  Dream_oauth.Github.make
     ~client_id:(Sys.getenv "GH_CLIENT_ID")
     ~client_secret:(Sys.getenv "GH_CLIENT_SECRET")
     ~redirect_uri:(Sys.getenv "GH_REDIRECT_URI")
     ()
 
 let stackoverflow =
-  Dream_oauth2.Stackoverflow.make
+  Dream_oauth.Stackoverflow.make
     ~client_id:(Sys.getenv "SO_CLIENT_ID")
     ~client_secret:(Sys.getenv "SO_CLIENT_SECRET")
     ~redirect_uri:(Sys.getenv "SO_REDIRECT_URI")
@@ -31,7 +31,7 @@ let stackoverflow =
     ()
 
 let twitch =
-  Dream_oauth2.Twitch.make
+  Dream_oauth.Twitch.make
     ~client_id:(Sys.getenv "TWITCH_CLIENT_ID")
     ~client_secret:(Sys.getenv "TWITCH_CLIENT_SECRET")
     ~redirect_uri:(Sys.getenv "TWITCH_REDIRECT_URI")
@@ -121,9 +121,9 @@ let render request =
 % begin match user request with
 % | None ->
     <p>Please sign in to chat!</p>
-    <p><a href="<%s Dream_oauth2.Github.authorize_url github request %>">Sign in with GitHub</a></p>
-    <p><a href="<%s Dream_oauth2.Stackoverflow.authorize_url stackoverflow request %>">Sign in with StackOverflow</a></p>
-    <p><a href="<%s Dream_oauth2.Twitch.authorize_url twitch request %>">Sign in with Twitch</a></p>
+    <p><a href="<%s Dream_oauth.Github.authorize_url github request %>">Sign in with GitHub</a></p>
+    <p><a href="<%s Dream_oauth.Stackoverflow.authorize_url stackoverflow request %>">Sign in with StackOverflow</a></p>
+    <p><a href="<%s Dream_oauth.Twitch.authorize_url twitch request %>">Sign in with Twitch</a></p>
     <p><%s! google_url %></p>
     <p><%s! microsoft_url %></p>
     <p><%s! twitch_oidc_url %></p>
@@ -166,7 +166,7 @@ let authenticate_handler path authenticate =
       Dream.respond ~status:`Unauthorized message
     | `Provider_error (error, description) ->
       let message =
-        Dream_oauth2.provider_error_to_string error ^
+        Dream_oauth.provider_error_to_string error ^
         (description
         |> Option.map (fun description -> ": " ^ description)
         |> Option.value ~default:"")
@@ -199,11 +199,11 @@ let () =
   @@ Dream.router [
 
     authenticate_handler "/oauth2/callback/github" (
-      Dream_oauth2.Github.authenticate github);
+      Dream_oauth.Github.authenticate github);
     authenticate_handler "/oauth2/callback/stackoverflow" (
-      Dream_oauth2.Stackoverflow.authenticate stackoverflow);
+      Dream_oauth.Stackoverflow.authenticate stackoverflow);
     authenticate_handler "/oauth2/callback/twitch" (
-      Dream_oauth2.Twitch.authenticate twitch);
+      Dream_oauth.Twitch.authenticate twitch);
 
     authenticate_handler "/oidc/callback/google" (
       Dream_oidc.authenticate google);

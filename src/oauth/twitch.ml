@@ -66,7 +66,7 @@ let user_profile oauth2 _request ~access_token =
          let user = json |> member "data" |> index 0 in
          Ok
            {
-             Oauth2.User_profile.provider = "twitch";
+             Oauth.User_profile.provider = "twitch";
              id = user |> member "login" |> to_string;
              name = user |> member "display_name" |> to_string_option;
              email = user |> member "email" |> to_string_option;
@@ -75,5 +75,5 @@ let user_profile oauth2 _request ~access_token =
            }))
 
 let authenticate oauth2 =
-  Oauth2.authenticate ~access_token:(access_token oauth2)
+  Oauth.authenticate ~access_token:(access_token oauth2)
     ~user_profile:(user_profile oauth2)

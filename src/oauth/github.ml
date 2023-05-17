@@ -69,7 +69,7 @@ let user_profile _oauth2 _req ~access_token =
          let email = json |> member "email" |> to_string in
          Ok
            {
-             Oauth2.User_profile.provider = "github";
+             Oauth.User_profile.provider = "github";
              id = login;
              name = Some login;
              email = Some email;
@@ -78,5 +78,5 @@ let user_profile _oauth2 _req ~access_token =
            }))
 
 let authenticate oauth2 =
-  Oauth2.authenticate ~access_token:(access_token oauth2)
+  Oauth.authenticate ~access_token:(access_token oauth2)
     ~user_profile:(user_profile oauth2)

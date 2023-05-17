@@ -1,4 +1,4 @@
-module User_profile = Dream_oauth2.User_profile
+module User_profile = Dream_oauth.User_profile
 
 type oidc
 (** OIDC client. *)
@@ -51,14 +51,14 @@ val provider_uri : oidc -> string
 val authorize_url : oidc -> Dream.request -> (string, string) Lwt_result.t
 (** Produce an URL to start signin flow with an OIDC provider. *)
 
-type authenticate_result = Dream_oauth2.authenticate_result
-and provider_error = Dream_oauth2.provider_error
+type authenticate_result = Dream_oauth.authenticate_result
+and provider_error = Dream_oauth.provider_error
 
 val provider_error_to_string : provider_error -> string
 val provider_error_of_string : string -> provider_error option
 
 val authenticate :
-  oidc -> Dream.request -> Dream_oauth2.authenticate_result Lwt.t
+  oidc -> Dream.request -> Dream_oauth.authenticate_result Lwt.t
 (** Get the result of authentication. This should be called inside the OAuth2
     callback handler.*)
 

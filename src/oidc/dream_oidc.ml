@@ -1,5 +1,5 @@
-module Hyper_helper = Dream_oauth2.Internal.Hyper_helper
-module User_profile = Dream_oauth2.User_profile
+module Hyper_helper = Dream_oauth.Internal.Hyper_helper
+module User_profile = Dream_oauth.User_profile
 
 type oidc = {
   client : Oidc.Client.t;
@@ -207,7 +207,7 @@ let user_profile oidc ~access_token ~id_token =
             in
             Ok
               {
-                Dream_oauth2.User_profile.provider = id_token.iss;
+                Dream_oauth.User_profile.provider = id_token.iss;
                 id = sub;
                 name;
                 email = member "email" json |> to_string_option;
@@ -217,11 +217,11 @@ let user_profile oidc ~access_token ~id_token =
           else
             Error "invalid user_profile")
 
-type authenticate_result = Dream_oauth2.authenticate_result
-and provider_error = Dream_oauth2.provider_error
+type authenticate_result = Dream_oauth.authenticate_result
+and provider_error = Dream_oauth.provider_error
 
-let provider_error_of_string = Dream_oauth2.provider_error_of_string
-let provider_error_to_string = Dream_oauth2.provider_error_to_string
+let provider_error_of_string = Dream_oauth.provider_error_of_string
+let provider_error_to_string = Dream_oauth.provider_error_to_string
 
 let authenticate oidc req =
   let exception Return of authenticate_result in
@@ -234,7 +234,7 @@ let authenticate oidc req =
       match Dream.query req "error" with
       | None -> ()
       | Some err -> (
-        match Dream_oauth2.provider_error_of_string err with
+        match Dream_oauth.provider_error_of_string err with
         | Some err ->
           let desc = Dream.query req "error_description" in
           raise (Return (`Provider_error (err, desc)))
